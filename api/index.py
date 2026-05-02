@@ -4,7 +4,7 @@ import re
 
 app = Flask(__name__)
 
-# 前端介面：優化了影片標籤，強制開啟 playsinline 以利於 iPhone 顯示
+# 前端介面：加入了物理層圖片覆蓋技術，確保 100% 看到封面
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -20,8 +20,17 @@ HTML_PAGE = """
         .tool-btn { background-color: #657786; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
         .clear-btn { background-color: #e0245e; }
         .main-btn { background-color: #1DA1F2; color: white; border: none; padding: 15px 20px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        
+        /* 影片容器與覆蓋封面樣式 */
+        #download-area { margin-top: 20px; display: none; position: relative; width: 100%; }
+        .video-wrapper { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: #000; line-height: 0; }
+        #videoPlayer { width: 100%; z-index: 1; }
+        #customPoster { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            object-fit: cover; z-index: 2; pointer-events: none; 
+        }
+        
         #status { margin-top: 15px; font-size: 14px; color: #657786; font-weight: bold; }
-        #download-area { margin-top: 20px; display: none; }
     </style>
 </head>
 <body>
@@ -34,28 +43,43 @@ HTML_PAGE = """
         </div>
         <button class="main-btn" id="submitBtn" onclick="fetchVideo()">獲取影片</button>
         <div id="status"></div>
+        
         <div id="download-area">
-            <!-- 加入 playsinline 與 webkit-playsinline 確保 iPhone 相容性 -->
-            <video id="videoPlayer" controls playsinline webkit-playsinline preload="metadata" style="width: 100%; border-radius: 10px; background-color: #000;"></video>
-            <br><br>
+            <div class="video-wrapper">
+                <img id="customPoster" src="" style="display:none;">
+                <video id="videoPlayer" controls playsinline webkit-playsinline onplay="hidePoster()"></video>
+            </div>
+            <br>
             <a id="downloadLink" href="#"><button style="background-color: #17bf63; border:none; color:white; padding:15px; width:100%; border-radius:8px; font-weight:bold; font-size: 16px;">📥 點此儲存至相簿</button></a>
         </div>
     </div>
+
     <script>
+        function hidePoster() {
+            document.getElementById('customPoster').style.display = 'none';
+        }
+
         function clearInput() { 
             document.getElementById('urlInput').value = ''; 
             document.getElementById('status').innerHTML = ''; 
-            document.getElementById('download-area').style.display = 'none'; 
-            document.getElementById('videoPlayer').removeAttribute('poster');
+            document.getElementById('download-area').style.display = 'none';
+            document.getElementById('customPoster').src = '';
         }
-        async function pasteText() { try { const text = await navigator.clipboard.readText(); document.getElementById('urlInput').value = text; } catch (err) { alert("請手動貼上連結"); } }
+
+        async function pasteText() { 
+            try { 
+                const text = await navigator.clipboard.readText(); 
+                document.getElementById('urlInput').value = text; 
+            } catch (err) { alert("請手動貼上連結"); } 
+        }
+
         async function fetchVideo() {
             const url = document.getElementById('urlInput').value;
             const status = document.getElementById('status');
             const btn = document.getElementById('submitBtn');
             if(!url) return;
             
-            status.innerHTML = "解析中...";
+            status.innerHTML = "正在獲取影片內容...";
             status.style.color = "#1DA1F2";
             btn.disabled = true;
             
@@ -71,20 +95,23 @@ HTML_PAGE = """
                     status.style.color = "#17bf63";
                     
                     const videoPlayer = document.getElementById('videoPlayer');
+                    const posterImg = document.getElementById('customPoster');
+                    
                     videoPlayer.src = data.video_url;
                     
-                    // 關鍵修正：透過我們自己的伺服器中轉圖片網址
+                    // 強制使用圖片中轉代理，並顯示在最上層
                     if (data.thumbnail_url) {
-                        videoPlayer.poster = `/api/proxy_image?url=${encodeURIComponent(data.thumbnail_url)}`;
+                        posterImg.src = `/api/proxy_image?url=${encodeURIComponent(data.thumbnail_url)}`;
+                        posterImg.style.display = 'block';
                     }
                     
                     document.getElementById('downloadLink').href = `/api/download?url=${encodeURIComponent(data.video_url)}`;
                     document.getElementById('download-area').style.display = "block";
                 } else {
-                    status.innerHTML = "❌ 解析失敗，請檢查連結";
+                    status.innerHTML = "❌ 解析失敗";
                     status.style.color = "red";
                 }
-            } catch (e) { status.innerHTML = "❌ 網路錯誤"; }
+            } catch (e) { status.innerHTML = "❌ 請求超時"; }
             btn.disabled = false;
         }
     </script>
@@ -105,7 +132,8 @@ def get_video():
 
     api_url = f"https://api.vxtwitter.com/{match.group(1)}/status/{match.group(2)}"
     try:
-        res = requests.get(api_url, timeout=10)
+        # 增加 headers 模擬真實請求
+        res = requests.get(api_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         if res.status_code == 200:
             info = res.json()
             video_url, thumb = None, None
@@ -119,19 +147,17 @@ def get_video():
         return jsonify({"error": "API 無回應"}), 500
     except: return jsonify({"error": "超時"}), 500
 
-# --- 這裡新增了圖片中轉功能，專門解決封面不顯示的問題 ---
 @app.route('/api/proxy_image')
 def proxy_image():
     img_url = request.args.get('url')
     if not img_url: return "No URL", 400
-    # 模擬瀏覽器去抓圖，避免推特阻擋
-    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}
+    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'}
     res = requests.get(img_url, headers=headers, stream=True)
     return Response(res.iter_content(chunk_size=1024), content_type=res.headers.get('Content-Type'))
 
 @app.route('/api/download')
 def download():
     video_url = request.args.get('url')
-    headers = {'Content-Disposition': 'attachment; filename="video.mp4"', 'Content-Type': 'video/mp4'}
+    headers = {'Content-Disposition': 'attachment; filename="x_video.mp4"', 'Content-Type': 'video/mp4'}
     req = requests.get(video_url, stream=True, timeout=30)
-    return Response(req.iter_content(chunk_size=4096), headers=headers)              
+    return Response(req.iter_content(chunk_size=4096), headers=headers)
