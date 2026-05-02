@@ -4,7 +4,7 @@ import re
 
 app = Flask(__name__)
 
-# 前端介面：加入了物理層圖片覆蓋技術，確保 100% 看到封面
+# 前端介面：改為動態容器，支援多個影片顯示
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -20,17 +20,18 @@ HTML_PAGE = """
         .tool-btn { background-color: #657786; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
         .clear-btn { background-color: #e0245e; }
         .main-btn { background-color: #1DA1F2; color: white; border: none; padding: 15px 20px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        #status { margin-top: 15px; font-size: 14px; color: #657786; font-weight: bold; }
         
-        /* 影片容器與覆蓋封面樣式 */
-        #download-area { margin-top: 20px; display: none; position: relative; width: 100%; }
+        /* 影片清單容器 */
+        #video-list { margin-top: 20px; width: 100%; }
+        .video-item { margin-bottom: 30px; position: relative; width: 100%; border-bottom: 1px solid #eee; padding-bottom: 20px; }
         .video-wrapper { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: #000; line-height: 0; }
-        #videoPlayer { width: 100%; z-index: 1; }
-        #customPoster { 
+        video { width: 100%; z-index: 1; }
+        .poster-img { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
             object-fit: cover; z-index: 2; pointer-events: none; 
         }
-        
-        #status { margin-top: 15px; font-size: 14px; color: #657786; font-weight: bold; }
+        .dl-btn { background-color: #17bf63; border:none; color:white; padding:15px; width:100%; border-radius:8px; font-weight:bold; font-size: 16px; margin-top: 10px; cursor: pointer; text-decoration: none; display: block; }
     </style>
 </head>
 <body>
@@ -43,27 +44,14 @@ HTML_PAGE = """
         </div>
         <button class="main-btn" id="submitBtn" onclick="fetchVideo()">獲取影片</button>
         <div id="status"></div>
-        
-        <div id="download-area">
-            <div class="video-wrapper">
-                <img id="customPoster" src="" style="display:none;">
-                <video id="videoPlayer" controls playsinline webkit-playsinline onplay="hidePoster()"></video>
-            </div>
-            <br>
-            <a id="downloadLink" href="#"><button style="background-color: #17bf63; border:none; color:white; padding:15px; width:100%; border-radius:8px; font-weight:bold; font-size: 16px;">📥 點此儲存至相簿</button></a>
-        </div>
+        <div id="video-list"></div>
     </div>
 
     <script>
-        function hidePoster() {
-            document.getElementById('customPoster').style.display = 'none';
-        }
-
         function clearInput() { 
             document.getElementById('urlInput').value = ''; 
             document.getElementById('status').innerHTML = ''; 
-            document.getElementById('download-area').style.display = 'none';
-            document.getElementById('customPoster').src = '';
+            document.getElementById('video-list').innerHTML = ''; 
         }
 
         async function pasteText() { 
@@ -76,10 +64,12 @@ HTML_PAGE = """
         async function fetchVideo() {
             const url = document.getElementById('urlInput').value;
             const status = document.getElementById('status');
+            const videoList = document.getElementById('video-list');
             const btn = document.getElementById('submitBtn');
             if(!url) return;
             
-            status.innerHTML = "正在獲取影片內容...";
+            videoList.innerHTML = "";
+            status.innerHTML = "正在解析所有影片...";
             status.style.color = "#1DA1F2";
             btn.disabled = true;
             
@@ -90,28 +80,32 @@ HTML_PAGE = """
                     body: JSON.stringify({ url: url })
                 });
                 const data = await response.json();
-                if(response.ok) {
-                    status.innerHTML = "✅ 解析成功！";
+                
+                if(response.ok && data.videos && data.videos.length > 0) {
+                    status.innerHTML = `✅ 成功解析 ${data.videos.length} 個影片！`;
                     status.style.color = "#17bf63";
                     
-                    const videoPlayer = document.getElementById('videoPlayer');
-                    const posterImg = document.getElementById('customPoster');
-                    
-                    videoPlayer.src = data.video_url;
-                    
-                    // 強制使用圖片中轉代理，並顯示在最上層
-                    if (data.thumbnail_url) {
-                        posterImg.src = `/api/proxy_image?url=${encodeURIComponent(data.thumbnail_url)}`;
-                        posterImg.style.display = 'block';
-                    }
-                    
-                    document.getElementById('downloadLink').href = `/api/download?url=${encodeURIComponent(data.video_url)}`;
-                    document.getElementById('download-area').style.display = "block";
+                    data.videos.forEach((vid, index) => {
+                        const item = document.createElement('div');
+                        item.className = 'video-item';
+                        
+                        // 建立影片 HTML 結構
+                        item.innerHTML = `
+                            <div class="video-wrapper">
+                                ${vid.thumbnail ? `<img class="poster-img" id="poster-${index}" src="/api/proxy_image?url=${encodeURIComponent(vid.thumbnail)}">` : ''}
+                                <video id="video-${index}" controls playsinline webkit-playsinline 
+                                       onplay="document.getElementById('poster-${index}').style.display='none'"
+                                       src="${vid.url}"></video>
+                            </div>
+                            <a class="dl-btn" href="/api/download?url=${encodeURIComponent(vid.url)}">📥 下載影片 ${data.videos.length > 1 ? index + 1 : ''}</a>
+                        `;
+                        videoList.appendChild(item);
+                    });
                 } else {
-                    status.innerHTML = "❌ 解析失敗";
+                    status.innerHTML = "❌ 無法解析影片，請確認連結";
                     status.style.color = "red";
                 }
-            } catch (e) { status.innerHTML = "❌ 請求超時"; }
+            } catch (e) { status.innerHTML = "❌ 請求失敗"; }
             btn.disabled = false;
         }
     </script>
@@ -132,18 +126,27 @@ def get_video():
 
     api_url = f"https://api.vxtwitter.com/{match.group(1)}/status/{match.group(2)}"
     try:
-        # 增加 headers 模擬真實請求
         res = requests.get(api_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         if res.status_code == 200:
             info = res.json()
-            video_url, thumb = None, None
+            videos = []
+            
+            # 關鍵：遍歷所有媒體文件
             if 'media_extended' in info:
                 for m in info['media_extended']:
                     if m.get('type') == 'video':
-                        video_url = m.get('url')
-                        thumb = m.get('thumbnail_url')
-                        break
-            return jsonify({"video_url": video_url, "thumbnail_url": thumb})
+                        videos.append({
+                            "url": m.get('url'),
+                            "thumbnail": m.get('thumbnail_url')
+                        })
+            
+            # 如果 media_extended 沒東西，嘗試回傳單一網址
+            if not videos and 'mediaURLs' in info:
+                for url in info['mediaURLs']:
+                    if '.mp4' in url:
+                        videos.append({"url": url, "thumbnail": None})
+                        
+            return jsonify({"videos": videos})
         return jsonify({"error": "API 無回應"}), 500
     except: return jsonify({"error": "超時"}), 500
 
@@ -151,13 +154,12 @@ def get_video():
 def proxy_image():
     img_url = request.args.get('url')
     if not img_url: return "No URL", 400
-    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15'}
-    res = requests.get(img_url, headers=headers, stream=True)
+    res = requests.get(img_url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True)
     return Response(res.iter_content(chunk_size=1024), content_type=res.headers.get('Content-Type'))
 
 @app.route('/api/download')
 def download():
     video_url = request.args.get('url')
-    headers = {'Content-Disposition': 'attachment; filename="x_video.mp4"', 'Content-Type': 'video/mp4'}
+    headers = {'Content-Disposition': 'attachment; filename="video.mp4"', 'Content-Type': 'video/mp4'}
     req = requests.get(video_url, stream=True, timeout=30)
     return Response(req.iter_content(chunk_size=4096), headers=headers)
