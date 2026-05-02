@@ -4,7 +4,7 @@ import re
 
 app = Flask(__name__)
 
-# 前端介面（移除了終極版字樣，加入了影片封面圖的支援）
+# 前端介面：優化了影片標籤，強制開啟 playsinline 以利於 iPhone 顯示
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
@@ -35,8 +35,8 @@ HTML_PAGE = """
         <button class="main-btn" id="submitBtn" onclick="fetchVideo()">獲取影片</button>
         <div id="status"></div>
         <div id="download-area">
-            <!-- 播放器加入了 preload="metadata" 並準備接收 poster 封面圖 -->
-            <video id="videoPlayer" controls preload="metadata" style="width: 100%; border-radius: 10px; background-color: #000;"></video>
+            <!-- 加入 playsinline 與 webkit-playsinline 確保 iPhone 相容性 -->
+            <video id="videoPlayer" controls playsinline webkit-playsinline preload="metadata" style="width: 100%; border-radius: 10px; background-color: #000;"></video>
             <br><br>
             <a id="downloadLink" href="#"><button style="background-color: #17bf63; border:none; color:white; padding:15px; width:100%; border-radius:8px; font-weight:bold; font-size: 16px;">📥 點此儲存至相簿</button></a>
         </div>
@@ -46,7 +46,6 @@ HTML_PAGE = """
             document.getElementById('urlInput').value = ''; 
             document.getElementById('status').innerHTML = ''; 
             document.getElementById('download-area').style.display = 'none'; 
-            // 清除時順便把舊的封面圖清掉
             document.getElementById('videoPlayer').removeAttribute('poster');
         }
         async function pasteText() { try { const text = await navigator.clipboard.readText(); document.getElementById('urlInput').value = text; } catch (err) { alert("請手動貼上連結"); } }
@@ -73,23 +72,19 @@ HTML_PAGE = """
                     
                     const videoPlayer = document.getElementById('videoPlayer');
                     videoPlayer.src = data.video_url;
-                    // 如果有抓到封面圖，就設定到播放器上
+                    
+                    // 關鍵修正：透過我們自己的伺服器中轉圖片網址
                     if (data.thumbnail_url) {
-                        videoPlayer.poster = data.thumbnail_url;
-                    } else {
-                        videoPlayer.removeAttribute('poster');
+                        videoPlayer.poster = `/api/proxy_image?url=${encodeURIComponent(data.thumbnail_url)}`;
                     }
                     
                     document.getElementById('downloadLink').href = `/api/download?url=${encodeURIComponent(data.video_url)}`;
                     document.getElementById('download-area').style.display = "block";
                 } else {
-                    status.innerHTML = "❌ 解析失敗：" + (data.error || "請檢查連結是否正確");
+                    status.innerHTML = "❌ 解析失敗，請檢查連結";
                     status.style.color = "red";
                 }
-            } catch (e) { 
-                status.innerHTML = "❌ 網路連線錯誤"; 
-                status.style.color = "red";
-            }
+            } catch (e) { status.innerHTML = "❌ 網路錯誤"; }
             btn.disabled = false;
         }
     </script>
@@ -105,62 +100,38 @@ def index():
 def get_video():
     data = request.json
     raw_url = data.get('url', '').strip()
-
     match = re.search(r'([a-zA-Z0-9_]+)/status/(\d+)', raw_url)
-    if not match:
-        return jsonify({"error": "這似乎不是有效的 X (推特) 貼文連結"}), 400
+    if not match: return jsonify({"error": "格式錯誤"}), 400
 
-    username = match.group(1)
-    tweet_id = match.group(2)
-    api_url = f"https://api.vxtwitter.com/{username}/status/{tweet_id}"
-
+    api_url = f"https://api.vxtwitter.com/{match.group(1)}/status/{match.group(2)}"
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        res = requests.get(api_url, headers=headers, timeout=15)
-        
+        res = requests.get(api_url, timeout=10)
         if res.status_code == 200:
-            json_data = res.json()
-            video_url = None
-            thumbnail_url = None
-
-            # 精準提取影片網址和封面預覽圖
-            if 'media_extended' in json_data:
-                for media in json_data['media_extended']:
-                    if media.get('type') == 'video':
-                        video_url = media.get('url')
-                        thumbnail_url = media.get('thumbnail_url')
+            info = res.json()
+            video_url, thumb = None, None
+            if 'media_extended' in info:
+                for m in info['media_extended']:
+                    if m.get('type') == 'video':
+                        video_url = m.get('url')
+                        thumb = m.get('thumbnail_url')
                         break
-            
-            if not video_url and 'mediaURLs' in json_data:
-                for url in json_data['mediaURLs']:
-                    if '.mp4' in url or '.m3u8' in url:
-                        video_url = url
-                        break
+            return jsonify({"video_url": video_url, "thumbnail_url": thumb})
+        return jsonify({"error": "API 無回應"}), 500
+    except: return jsonify({"error": "超時"}), 500
 
-            if video_url:
-                # 把抓到的封面圖一併回傳給前端
-                return jsonify({"video_url": video_url, "thumbnail_url": thumbnail_url})
-            else:
-                return jsonify({"error": "該貼文中沒有影片，或對方是鎖頭私密帳號。"}), 404
-        else:
-            return jsonify({"error": "遠端破解伺服器無回應"}), 500
-
-    except Exception as e:
-        return jsonify({"error": "請求超時"}), 500
+# --- 這裡新增了圖片中轉功能，專門解決封面不顯示的問題 ---
+@app.route('/api/proxy_image')
+def proxy_image():
+    img_url = request.args.get('url')
+    if not img_url: return "No URL", 400
+    # 模擬瀏覽器去抓圖，避免推特阻擋
+    headers = {'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)'}
+    res = requests.get(img_url, headers=headers, stream=True)
+    return Response(res.iter_content(chunk_size=1024), content_type=res.headers.get('Content-Type'))
 
 @app.route('/api/download')
 def download():
     video_url = request.args.get('url')
-    if not video_url: return "Missing URL", 400
-    
-    headers = {
-        'Content-Disposition': 'attachment; filename="x_video.mp4"',
-        'Content-Type': 'video/mp4'
-    }
-    
-    req_headers = {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
-    }
-    
-    req = requests.get(video_url, stream=True, headers=req_headers, timeout=30)
-    return Response(req.iter_content(chunk_size=4096), headers=headers)
+    headers = {'Content-Disposition': 'attachment; filename="video.mp4"', 'Content-Type': 'video/mp4'}
+    req = requests.get(video_url, stream=True, timeout=30)
+    return Response(req.iter_content(chunk_size=4096), headers=headers)              
