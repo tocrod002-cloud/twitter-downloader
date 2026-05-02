@@ -4,14 +4,14 @@ import re
 
 app = Flask(__name__)
 
-# 前端介面（保留你喜歡的一鍵貼上與清除功能，並優化了提示文字）
+# 前端介面（移除了終極版字樣，加入了影片封面圖的支援）
 HTML_PAGE = """
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X 影片下載器 (終極版)</title>
+    <title>X 影片下載器</title>
     <style>
         body { font-family: -apple-system, sans-serif; background-color: #f5f8fa; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
@@ -26,7 +26,7 @@ HTML_PAGE = """
 </head>
 <body>
     <div class="container">
-        <h2 style="color: #1DA1F2;">X 影片下載器 <span style="font-size:12px;color:red;">(終極版)</span></h2>
+        <h2 style="color: #1DA1F2;">X 影片下載器</h2>
         <div class="input-group">
             <input type="text" id="urlInput" placeholder="貼上 X 或 Twitter 連結...">
             <button class="tool-btn" onclick="pasteText()">貼上</button>
@@ -35,13 +35,20 @@ HTML_PAGE = """
         <button class="main-btn" id="submitBtn" onclick="fetchVideo()">獲取影片</button>
         <div id="status"></div>
         <div id="download-area">
-            <video id="videoPlayer" controls style="width: 100%; border-radius: 10px;"></video>
+            <!-- 播放器加入了 preload="metadata" 並準備接收 poster 封面圖 -->
+            <video id="videoPlayer" controls preload="metadata" style="width: 100%; border-radius: 10px; background-color: #000;"></video>
             <br><br>
             <a id="downloadLink" href="#"><button style="background-color: #17bf63; border:none; color:white; padding:15px; width:100%; border-radius:8px; font-weight:bold; font-size: 16px;">📥 點此儲存至相簿</button></a>
         </div>
     </div>
     <script>
-        function clearInput() { document.getElementById('urlInput').value = ''; document.getElementById('status').innerHTML = ''; document.getElementById('download-area').style.display = 'none'; }
+        function clearInput() { 
+            document.getElementById('urlInput').value = ''; 
+            document.getElementById('status').innerHTML = ''; 
+            document.getElementById('download-area').style.display = 'none'; 
+            // 清除時順便把舊的封面圖清掉
+            document.getElementById('videoPlayer').removeAttribute('poster');
+        }
         async function pasteText() { try { const text = await navigator.clipboard.readText(); document.getElementById('urlInput').value = text; } catch (err) { alert("請手動貼上連結"); } }
         async function fetchVideo() {
             const url = document.getElementById('urlInput').value;
@@ -49,7 +56,7 @@ HTML_PAGE = """
             const btn = document.getElementById('submitBtn');
             if(!url) return;
             
-            status.innerHTML = "啟動終極 API 解析中...";
+            status.innerHTML = "解析中...";
             status.style.color = "#1DA1F2";
             btn.disabled = true;
             
@@ -63,7 +70,16 @@ HTML_PAGE = """
                 if(response.ok) {
                     status.innerHTML = "✅ 解析成功！";
                     status.style.color = "#17bf63";
-                    document.getElementById('videoPlayer').src = data.video_url;
+                    
+                    const videoPlayer = document.getElementById('videoPlayer');
+                    videoPlayer.src = data.video_url;
+                    // 如果有抓到封面圖，就設定到播放器上
+                    if (data.thumbnail_url) {
+                        videoPlayer.poster = data.thumbnail_url;
+                    } else {
+                        videoPlayer.removeAttribute('poster');
+                    }
+                    
                     document.getElementById('downloadLink').href = `/api/download?url=${encodeURIComponent(data.video_url)}`;
                     document.getElementById('download-area').style.display = "block";
                 } else {
@@ -90,34 +106,31 @@ def get_video():
     data = request.json
     raw_url = data.get('url', '').strip()
 
-    # 1. 精準提取用戶名與貼文 ID
     match = re.search(r'([a-zA-Z0-9_]+)/status/(\d+)', raw_url)
     if not match:
         return jsonify({"error": "這似乎不是有效的 X (推特) 貼文連結"}), 400
 
     username = match.group(1)
     tweet_id = match.group(2)
-
-    # 2. 調用 VxTwitter 專用 API (無視 X 的防爬蟲機制)
     api_url = f"https://api.vxtwitter.com/{username}/status/{tweet_id}"
 
     try:
-        # 加上基礎標頭防止 API 阻擋
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         res = requests.get(api_url, headers=headers, timeout=15)
         
         if res.status_code == 200:
             json_data = res.json()
             video_url = None
+            thumbnail_url = None
 
-            # 3. 從回傳的 JSON 中精準抓取最高畫質的影片網址
+            # 精準提取影片網址和封面預覽圖
             if 'media_extended' in json_data:
                 for media in json_data['media_extended']:
                     if media.get('type') == 'video':
                         video_url = media.get('url')
+                        thumbnail_url = media.get('thumbnail_url')
                         break
             
-            # 備用抓取邏輯
             if not video_url and 'mediaURLs' in json_data:
                 for url in json_data['mediaURLs']:
                     if '.mp4' in url or '.m3u8' in url:
@@ -125,7 +138,8 @@ def get_video():
                         break
 
             if video_url:
-                return jsonify({"video_url": video_url})
+                # 把抓到的封面圖一併回傳給前端
+                return jsonify({"video_url": video_url, "thumbnail_url": thumbnail_url})
             else:
                 return jsonify({"error": "該貼文中沒有影片，或對方是鎖頭私密帳號。"}), 404
         else:
@@ -139,13 +153,11 @@ def download():
     video_url = request.args.get('url')
     if not video_url: return "Missing URL", 400
     
-    # 告訴 Safari 強制下載
     headers = {
         'Content-Disposition': 'attachment; filename="x_video.mp4"',
         'Content-Type': 'video/mp4'
     }
     
-    # 加入手機端 User-Agent，確保推特圖片伺服器允許下載
     req_headers = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
     }
