@@ -1,187 +1,846 @@
-from flask import Flask, request, jsonify, render_template_string, Response
-import requests
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import (
+    urlparse,
+    parse_qs,
+    urlencode,
+    urlunparse,
+)
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
+import json
 import re
-import time
 
-app = Flask(__name__)
 
-HTML_PAGE = """
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X (Twitter) 高清影片下載器</title>
-    <style>
-        body { font-family: -apple-system, sans-serif; background-color: #f5f8fa; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
-        .input-group { display: flex; gap: 8px; margin: 15px 0; align-items: center; }
-        input { flex: 1; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; outline: none; }
-        .tool-btn { background-color: #657786; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
-        .clear-btn { background-color: #e0245e; }
-        .main-btn { background-color: #1DA1F2; color: white; border: none; padding: 15px 20px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
-        #status { margin-top: 15px; font-size: 14px; color: #657786; font-weight: bold; }
-        
-        #video-list { margin-top: 20px; width: 100%; }
-        .video-item { margin-bottom: 30px; position: relative; width: 100%; border-bottom: 1px solid #eee; padding-bottom: 20px; }
-        .video-wrapper { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: #000; line-height: 0; }
-        video { width: 100%; z-index: 1; }
-        .poster-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
-        .dl-btn { background-color: #17bf63; border:none; color:white; padding:15px; width:100%; border-radius:8px; font-weight:bold; font-size: 16px; margin-top: 10px; cursor: pointer; text-decoration: none; display: block; text-align: center; box-sizing: border-box; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2 style="color: #1DA1F2;">X 影片專屬下載器</h2>
-        <div class="input-group">
-            <input type="text" id="urlInput" placeholder="貼上 X (Twitter) 連結...">
-            <button class="tool-btn" onclick="pasteText()">貼上</button>
-            <button class="tool-btn clear-btn" onclick="clearInput()">清除</button>
-        </div>
-        <button class="main-btn" id="submitBtn" onclick="fetchVideo()">解析影片</button>
-        <div id="status"></div>
-        <div id="video-list"></div>
-    </div>
+ALLOWED_HOSTS = {
+    "x.com",
+    "www.x.com",
+    "twitter.com",
+    "www.twitter.com",
+    "mobile.twitter.com",
+    "m.twitter.com",
+}
 
-    <script>
-        function clearInput() { 
-            document.getElementById('urlInput').value = ''; 
-            document.getElementById('status').innerHTML = ''; 
-            document.getElementById('video-list').innerHTML = ''; 
-        }
 
-        async function pasteText() { 
-            try { 
-                const text = await navigator.clipboard.readText(); 
-                document.getElementById('urlInput').value = text; 
-            } catch (err) { alert("請手動貼上連結"); } 
-        }
+STATUS_RE = re.compile(
+    r"/(?:status|statuses)/(\d+)(?:/|$)"
+)
 
-        async function fetchVideo() {
-            const url = document.getElementById('urlInput').value;
-            const status = document.getElementById('status');
-            const videoList = document.getElementById('video-list');
-            const btn = document.getElementById('submitBtn');
-            if(!url) return;
-            
-            videoList.innerHTML = "";
-            status.innerHTML = "正在切換可用節點解析中...";
-            status.style.color = "#1DA1F2";
-            btn.disabled = true;
-            
-            try {
-                const response = await fetch('/api/get_video', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
-                });
-                const data = await response.json();
-                
-                if(response.ok && data.videos && data.videos.length > 0) {
-                    status.innerHTML = `✅ 成功解析 ${data.videos.length} 個影片！`;
-                    status.style.color = "#17bf63";
-                    
-                    data.videos.forEach((vid, index) => {
-                        const item = document.createElement('div');
-                        item.className = 'video-item';
-                        item.innerHTML = `
-                            <div class="video-wrapper">
-                                ${vid.thumbnail ? `<img class="poster-img" id="poster-${index}" src="/api/proxy_image?url=${encodeURIComponent(vid.thumbnail)}">` : ''}
-                                <video id="video-${index}" controls playsinline webkit-playsinline 
-                                       onplay="if(document.getElementById('poster-${index}')) document.getElementById('poster-${index}').style.display='none'"
-                                       src="${vid.url}"></video>
-                            </div>
-                            <a class="dl-btn" href="/api/download?url=${encodeURIComponent(vid.url)}">📥 下載最高清影片 ${data.videos.length > 1 ? index + 1 : ''}</a>
-                        `;
-                        videoList.appendChild(item);
-                    });
-                } else {
-                    status.innerHTML = "❌ " + (data.error || "無法解析影片，可能被限制存取或節點全數失效");
-                    status.style.color = "red";
-                }
-            } catch (e) { status.innerHTML = "❌ 請求失敗，伺服器超時"; }
-            btn.disabled = false;
-        }
-    </script>
-</body>
-</html>
-"""
 
-@app.route('/')
-def index():
-    return render_template_string(HTML_PAGE)
+def send_json(
+    handler,
+    status_code,
+    payload
+):
 
-@app.route('/api/get_video', methods=['POST'])
-def get_video():
-    data = request.json
-    raw_url = data.get('url', '').strip()
-    
-    # 提取帳號與推文 ID
-    match = re.search(r'([a-zA-Z0-9_]+)/status/(\d+)', raw_url)
-    if not match: return jsonify({"error": "不支援的連結格式"}), 400
+    body = json.dumps(
+        payload,
+        ensure_ascii=False
+    ).encode("utf-8")
 
-    username = match.group(1)
-    tweet_id = match.group(2)
-    
-    # ==========================================
-    # 多節點矩陣：只要有一個活著，就能下載成功
-    # ==========================================
-    x_api_nodes = [
-        f"https://api.vxtwitter.com/{username}/status/{tweet_id}",
-        f"https://api.fxtwitter.com/{username}/status/{tweet_id}",
-        f"https://api.twxtter.com/{username}/status/{tweet_id}"
+    handler.send_response(
+        status_code
+    )
+
+    handler.send_header(
+        "Content-Type",
+        "application/json; charset=utf-8"
+    )
+
+    handler.send_header(
+        "Cache-Control",
+        "no-store"
+    )
+
+    handler.send_header(
+        "X-Content-Type-Options",
+        "nosniff"
+    )
+
+    handler.end_headers()
+
+    handler.wfile.write(
+        body
+    )
+
+
+def normalize_x_url(raw):
+
+    raw = (
+        raw or ""
+    ).strip()
+
+
+    if not raw:
+
+        raise ValueError(
+            "請貼上 X / Twitter 帖子連結"
+        )
+
+
+    if len(raw) > 2048:
+
+        raise ValueError(
+            "連結太長"
+        )
+
+
+    if not re.match(
+        r"^https?://",
+        raw,
+        re.I
+    ):
+
+        raw = (
+            "https://" +
+            raw
+        )
+
+
+    parsed = urlparse(
+        raw
+    )
+
+
+    host = (
+        parsed.hostname or ""
+    ).lower()
+
+
+    if host not in ALLOWED_HOSTS:
+
+        raise ValueError(
+            "目前只支援 x.com / twitter.com 的公開帖子連結"
+        )
+
+
+    match = STATUS_RE.search(
+        parsed.path
+    )
+
+
+    if not match:
+
+        raise ValueError(
+            "找不到帖子 ID，請貼上完整的 X 帖子連結"
+        )
+
+
+    return (
+        raw,
+        match.group(1)
+    )
+
+
+def original_photo_url(
+    raw_url
+):
+
+    if not raw_url:
+
+        return raw_url
+
+
+    u = urlparse(
+        raw_url
+    )
+
+
+    if (
+        u.hostname !=
+        "pbs.twimg.com"
+    ):
+
+        return raw_url
+
+
+    q = parse_qs(
+        u.query,
+        keep_blank_values=True
+    )
+
+
+    q["name"] = [
+        "orig"
     ]
-    
-    last_error = ""
-    for api_url in x_api_nodes:
+
+
+    query = urlencode(
+        [
+            (k, v)
+
+            for k, values
+            in q.items()
+
+            for v
+            in values
+        ]
+    )
+
+
+    return urlunparse(
+        (
+            u.scheme or "https",
+            u.netloc,
+            u.path,
+            u.params,
+            query,
+            u.fragment,
+        )
+    )
+
+
+def best_video_format(
+    item
+):
+
+    formats = (
+        item.get("formats")
+        or []
+    )
+
+
+    candidates = []
+
+
+    for fmt in formats:
+
+        url = fmt.get(
+            "url"
+        )
+
+
+        if not url:
+
+            continue
+
+
+        container = (
+            fmt.get("container")
+            or ""
+        ).lower()
+
+
+        if (
+            container and
+            container != "mp4"
+        ):
+
+            continue
+
+
+        width = int(
+            fmt.get("width")
+            or 0
+        )
+
+
+        height = int(
+            fmt.get("height")
+            or 0
+        )
+
+
+        bitrate = int(
+            fmt.get("bitrate")
+            or 0
+        )
+
+
+        size = int(
+            fmt.get("size")
+            or 0
+        )
+
+
+        codec = (
+            fmt.get("codec")
+            or ""
+        ).lower()
+
+
+        compat = (
+            1
+
+            if codec in (
+                "",
+                "h264"
+            )
+
+            else 0
+        )
+
+
+        rank = (
+            width * height,
+            bitrate,
+            size,
+            compat,
+        )
+
+
+        candidates.append(
+            (
+                rank,
+                fmt
+            )
+        )
+
+
+    if candidates:
+
+        candidates.sort(
+            key=lambda x: x[0],
+            reverse=True
+        )
+
+
+        return (
+            candidates[0][1]
+        )
+
+
+    if item.get("url"):
+
+        return {
+
+            "url":
+                item.get("url"),
+
+            "width":
+                item.get("width"),
+
+            "height":
+                item.get("height"),
+
+            "container":
+                item.get("format")
+                or "mp4",
+        }
+
+
+    return None
+
+
+def media_from_status(
+    status
+):
+
+    media = (
+        status.get("media")
+        or {}
+    )
+
+
+    items = (
+        media.get("all")
+        or []
+    )
+
+
+    if not items:
+
+        items = (
+            (media.get("photos") or [])
+            +
+            (media.get("videos") or [])
+        )
+
+
+    result = []
+
+    photo_no = 0
+
+    video_no = 0
+
+
+    for item in items:
+
+        mtype = (
+            item.get("type")
+            or ""
+        ).lower()
+
+
+        if mtype == "photo":
+
+            photo_no += 1
+
+
+            url = original_photo_url(
+                item.get("url")
+            )
+
+
+            if not url:
+
+                continue
+
+
+            fmt = (
+                item.get("format")
+                or "jpg"
+            ).lower().replace(
+                "jpeg",
+                "jpg"
+            )
+
+
+            result.append(
+                {
+                    "type":
+                        "photo",
+
+                    "label":
+                        f"相片 {photo_no}",
+
+                    "url":
+                        url,
+
+                    "preview":
+                        url,
+
+                    "width":
+                        item.get("width"),
+
+                    "height":
+                        item.get("height"),
+
+                    "format":
+                        fmt,
+                }
+            )
+
+
+            continue
+
+
+        if mtype in (
+            "video",
+            "gif"
+        ):
+
+            video_no += 1
+
+
+            best = (
+                best_video_format(
+                    item
+                )
+            )
+
+
+            if (
+                not best
+                or
+                not best.get("url")
+            ):
+
+                continue
+
+
+            width = (
+                best.get("width")
+                or
+                item.get("width")
+            )
+
+
+            height = (
+                best.get("height")
+                or
+                item.get("height")
+            )
+
+
+            result.append(
+                {
+                    "type":
+                        (
+                            "gif"
+
+                            if mtype ==
+                            "gif"
+
+                            else
+                            "video"
+                        ),
+
+                    "label":
+                        (
+                            f"GIF {video_no}"
+
+                            if mtype ==
+                            "gif"
+
+                            else
+                            f"影片 {video_no}"
+                        ),
+
+                    "url":
+                        best.get("url"),
+
+                    "preview":
+                        (
+                            item.get(
+                                "thumbnail_url"
+                            )
+                            or ""
+                        ),
+
+                    "width":
+                        width,
+
+                    "height":
+                        height,
+
+                    "bitrate":
+                        best.get(
+                            "bitrate"
+                        ),
+
+                    "format":
+                        "mp4",
+                }
+            )
+
+
+            continue
+
+
+        if (
+            mtype ==
+            "mosaic_photo"
+        ):
+
+            formats = (
+                item.get("formats")
+                or {}
+            )
+
+
+            mosaic_url = (
+                formats.get("jpeg")
+                or
+                formats.get("webp")
+            )
+
+
+            if mosaic_url:
+
+                photo_no += 1
+
+
+                result.append(
+                    {
+                        "type":
+                            "photo",
+
+                        "label":
+                            (
+                                f"相片拼圖 "
+                                f"{photo_no}"
+                            ),
+
+                        "url":
+                            mosaic_url,
+
+                        "preview":
+                            mosaic_url,
+
+                        "width":
+                            item.get(
+                                "width"
+                            ),
+
+                        "height":
+                            item.get(
+                                "height"
+                            ),
+
+                        "format":
+                            (
+                                "jpg"
+
+                                if formats.get(
+                                    "jpeg"
+                                )
+
+                                else
+                                "webp"
+                            ),
+                    }
+                )
+
+
+    return result
+
+
+class handler(
+    BaseHTTPRequestHandler
+):
+
+    def do_GET(self):
+
         try:
-            res = requests.get(api_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=8)
-            if res.status_code == 200:
-                info = res.json()
-                videos = []
-                
-                # 解析影片資料
-                if 'media_extended' in info:
-                    for m in info['media_extended']:
-                        if m.get('type') == 'video':
-                            videos.append({
-                                "url": m.get('url'),
-                                "thumbnail": m.get('thumbnail_url')
-                            })
-                # 備用解析邏輯
-                if not videos and 'mediaURLs' in info:
-                    for url in info['mediaURLs']:
-                        if '.mp4' in url:
-                            videos.append({"url": url, "thumbnail": None})
-                            
-                if videos:
-                    return jsonify({"videos": videos})
-        except Exception as e:
-            last_error = str(e)
-            continue # 如果這個節點掛了，立刻換下一個
 
-    return jsonify({"error": "目前所有 X 解析伺服器皆無回應，請稍後重試"}), 500
+            parsed_request = (
+                urlparse(
+                    self.path
+                )
+            )
 
-@app.route('/api/proxy_image')
-def proxy_image():
-    img_url = request.args.get('url')
-    if not img_url: return "No URL", 400
-    res = requests.get(img_url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True)
-    return Response(res.iter_content(chunk_size=1024), content_type=res.headers.get('Content-Type'))
 
-@app.route('/api/download')
-def download():
-    media_url = request.args.get('url')
-    if not media_url: return "Missing URL", 400
-        
-    filename = f"X_video_{int(time.time())}.mp4"
-    headers = {
-        'Content-Disposition': f'attachment; filename="{filename}"', 
-        'Content-Type': 'video/mp4'
-    }
-    
-    try:
-        req = requests.get(media_url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True, timeout=30)
-        return Response(req.iter_content(chunk_size=4096), headers=headers)
-    except:
-        return "Download Failed", 500
+            qs = parse_qs(
+                parsed_request.query
+            )
+
+
+            raw_url = (
+                qs.get("url")
+                or [""]
+            )[0]
+
+
+            _, status_id = (
+                normalize_x_url(
+                    raw_url
+                )
+            )
+
+
+            api_url = (
+                "https://api.fxtwitter.com/"
+                f"2/status/{status_id}"
+            )
+
+
+            req = Request(
+                api_url,
+                headers={
+                    "User-Agent":
+                        "XMediaDownloader/1.0",
+
+                    "Accept":
+                        "application/json",
+                },
+            )
+
+
+            with urlopen(
+                req,
+                timeout=15
+            ) as response:
+
+                payload = json.loads(
+                    response
+                    .read()
+                    .decode("utf-8")
+                )
+
+
+            code = int(
+                payload.get("code")
+                or 200
+            )
+
+
+            status = payload.get(
+                "status"
+            )
+
+
+            if (
+                code != 200
+                or
+                not isinstance(
+                    status,
+                    dict
+                )
+            ):
+
+                message = (
+                    payload.get(
+                        "message"
+                    )
+                    or
+                    "無法取得這則帖子，可能已刪除、受保護或暫時無法讀取"
+                )
+
+
+                send_json(
+                    self,
+
+                    (
+                        404
+                        if code == 404
+                        else 502
+                    ),
+
+                    {
+                        "ok": False,
+                        "error": message,
+                    },
+                )
+
+
+                return
+
+
+            media = media_from_status(
+                status
+            )
+
+
+            if not media:
+
+                send_json(
+                    self,
+                    404,
+                    {
+                        "ok": False,
+
+                        "error":
+                            "這則帖子沒有可下載的 X 圖片或影片",
+                    },
+                )
+
+
+                return
+
+
+            author = (
+                status.get("author")
+                or {}
+            )
+
+
+            send_json(
+                self,
+                200,
+                {
+                    "ok":
+                        True,
+
+                    "post":
+                        {
+                            "id":
+                                (
+                                    status.get("id")
+                                    or
+                                    status_id
+                                ),
+
+                            "url":
+                                (
+                                    status.get("url")
+                                    or
+                                    raw_url
+                                ),
+
+                            "text":
+                                (
+                                    status.get("text")
+                                    or ""
+                                ),
+
+                            "author":
+                                {
+                                    "name":
+                                        (
+                                            author.get(
+                                                "name"
+                                            )
+                                            or
+                                            author.get(
+                                                "display_name"
+                                            )
+                                            or ""
+                                        ),
+
+                                    "username":
+                                        (
+                                            author.get(
+                                                "screen_name"
+                                            )
+                                            or
+                                            author.get(
+                                                "username"
+                                            )
+                                            or ""
+                                        ),
+                                },
+                        },
+
+                    "media":
+                        media,
+                },
+            )
+
+
+        except ValueError as exc:
+
+            send_json(
+                self,
+                400,
+                {
+                    "ok": False,
+
+                    "error":
+                        str(exc),
+                },
+            )
+
+
+        except HTTPError as exc:
+
+            status_code = (
+                404
+
+                if exc.code == 404
+
+                else 502
+            )
+
+
+            send_json(
+                self,
+                status_code,
+                {
+                    "ok": False,
+
+                    "error":
+                        (
+                            "上游服務回應錯誤"
+                            f"（HTTP {exc.code}）"
+                        ),
+                },
+            )
+
+
+        except URLError:
+
+            send_json(
+                self,
+                502,
+                {
+                    "ok": False,
+
+                    "error":
+                        "目前無法連線到 X 媒體解析服務，請稍後再試",
+                },
+            )
+
+
+        except Exception:
+
+            send_json(
+                self,
+                500,
+                {
+                    "ok": False,
+
+                    "error":
+                        "伺服器發生未預期錯誤，請稍後再試",
+                },
+            )
