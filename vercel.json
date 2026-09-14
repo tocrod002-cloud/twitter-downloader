@@ -10,29 +10,24 @@
   "headers": [
     {
       "source": "/download/video/:path*",
-
       "headers": [
         {
           "key": "Content-Disposition",
           "value": "attachment"
         },
-
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
         }
       ]
     },
-
     {
       "source": "/download/photo/:path*",
-
       "headers": [
         {
           "key": "Content-Disposition",
           "value": "attachment"
         },
-
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
@@ -44,16 +39,11 @@
   "rewrites": [
     {
       "source": "/download/video/:path*",
-
-      "destination":
-        "https://video.twimg.com/:path*"
+      "destination": "https://video.twimg.com/:path*"
     },
-
     {
       "source": "/download/photo/:path*",
-
-      "destination":
-        "https://pbs.twimg.com/:path*"
+      "destination": "https://pbs.twimg.com/:path*"
     }
   ]
 }
