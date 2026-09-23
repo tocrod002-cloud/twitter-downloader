@@ -1,16 +1,10 @@
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import (
-    urlparse,
-    parse_qs,
-    urlencode,
-    urlunparse,
-)
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-
 import json
 import re
-
+import time
 
 ALLOWED_HOSTS = {
     "x.com",
@@ -21,9 +15,26 @@ ALLOWED_HOSTS = {
     "m.twitter.com",
 }
 
+STATUS_RE = re.compile(r"/(?:status|statuses)/(\d+)(?:/|$)")
 
-STATUS_RE = re.compile(
-    r"/(?:status|statuses)/(\d+)(?:/|$)"
+# 這些上游錯誤會自動重試
+RETRYABLE_HTTP = {
+    404,
+    408,
+    425,
+    429,
+    500,
+    502,
+    503,
+    504,
+}
+
+# 第一次失敗等 0.35 秒
+# 第二次失敗等 0.8 秒
+# 總共最多嘗試 3 次 v2
+RETRY_DELAYS = (
+    0.35,
+    0.8,
 )
 
 
@@ -32,7 +43,6 @@ def send_json(
     status_code,
     payload
 ):
-
     body = json.dumps(
         payload,
         ensure_ascii=False
@@ -70,61 +80,47 @@ def normalize_x_url(raw):
         raw or ""
     ).strip()
 
-
     if not raw:
-
         raise ValueError(
             "請貼上 X / Twitter 帖子連結"
         )
 
-
     if len(raw) > 2048:
-
         raise ValueError(
             "連結太長"
         )
-
 
     if not re.match(
         r"^https?://",
         raw,
         re.I
     ):
-
         raw = (
             "https://" +
             raw
         )
 
-
     parsed = urlparse(
         raw
     )
-
 
     host = (
         parsed.hostname or ""
     ).lower()
 
-
     if host not in ALLOWED_HOSTS:
-
         raise ValueError(
             "目前只支援 x.com / twitter.com 的公開帖子連結"
         )
-
 
     match = STATUS_RE.search(
         parsed.path
     )
 
-
     if not match:
-
         raise ValueError(
             "找不到帖子 ID，請貼上完整的 X 帖子連結"
         )
-
 
     return (
         raw,
@@ -137,33 +133,26 @@ def original_photo_url(
 ):
 
     if not raw_url:
-
         return raw_url
-
 
     u = urlparse(
         raw_url
     )
 
-
     if (
         u.hostname !=
         "pbs.twimg.com"
     ):
-
         return raw_url
-
 
     q = parse_qs(
         u.query,
         keep_blank_values=True
     )
 
-
     q["name"] = [
         "orig"
     ]
-
 
     query = urlencode(
         [
@@ -177,7 +166,6 @@ def original_photo_url(
         ]
     )
 
-
     return urlunparse(
         (
             u.scheme or "https",
@@ -190,6 +178,20 @@ def original_photo_url(
     )
 
 
+def as_int(value):
+
+    try:
+        return int(
+            value or 0
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+        return 0
+
+
 def best_video_format(
     item
 ):
@@ -199,85 +201,87 @@ def best_video_format(
         or []
     )
 
+    if not isinstance(
+        formats,
+        list
+    ):
+        formats = []
 
     candidates = []
 
-
     for fmt in formats:
+
+        if not isinstance(
+            fmt,
+            dict
+        ):
+            continue
 
         url = fmt.get(
             "url"
         )
 
-
         if not url:
-
             continue
-
 
         container = (
             fmt.get("container")
             or ""
         ).lower()
 
-
         if (
             container and
-            container != "mp4"
+            container not in (
+                "mp4",
+                "video/mp4"
+            )
         ):
-
             continue
 
-
-        width = int(
+        width = as_int(
             fmt.get("width")
-            or 0
         )
 
-
-        height = int(
+        height = as_int(
             fmt.get("height")
-            or 0
         )
 
-
-        bitrate = int(
+        bitrate = as_int(
             fmt.get("bitrate")
-            or 0
         )
 
-
-        size = int(
+        size = as_int(
             fmt.get("size")
-            or 0
         )
-
 
         codec = (
             fmt.get("codec")
             or ""
         ).lower()
 
-
-        compat = (
+        safari_compat = (
             1
 
             if codec in (
                 "",
-                "h264"
+                "h264",
+                "avc1"
             )
 
             else 0
         )
 
-
+        # 優先順序：
+        # 1. 解析度
+        # 2. bitrate
+        # 3. 檔案大小
+        # 4. Safari 相容性
         rank = (
             width * height,
             bitrate,
             size,
-            compat,
+            safari_compat,
         )
-
 
         candidates.append(
             (
@@ -286,7 +290,6 @@ def best_video_format(
             )
         )
 
-
     if candidates:
 
         candidates.sort(
@@ -294,16 +297,14 @@ def best_video_format(
             reverse=True
         )
 
-
         return (
             candidates[0][1]
         )
 
-
+    # legacy API 通常已經直接給影片 URL
     if item.get("url"):
 
         return {
-
             "url":
                 item.get("url"),
 
@@ -313,11 +314,13 @@ def best_video_format(
             "height":
                 item.get("height"),
 
+            "bitrate":
+                item.get("bitrate"),
+
             "container":
                 item.get("format")
                 or "mp4",
         }
-
 
     return None
 
@@ -331,12 +334,16 @@ def media_from_status(
         or {}
     )
 
+    if not isinstance(
+        media,
+        dict
+    ):
+        return []
 
     items = (
         media.get("all")
         or []
     )
-
 
     if not items:
 
@@ -346,45 +353,58 @@ def media_from_status(
             (media.get("videos") or [])
         )
 
-
     result = []
 
     photo_no = 0
-
     video_no = 0
 
-
     for item in items:
+
+        if not isinstance(
+            item,
+            dict
+        ):
+            continue
 
         mtype = (
             item.get("type")
             or ""
         ).lower()
 
-
         if mtype == "photo":
 
             photo_no += 1
-
 
             url = original_photo_url(
                 item.get("url")
             )
 
-
             if not url:
-
                 continue
-
 
             fmt = (
                 item.get("format")
-                or "jpg"
-            ).lower().replace(
-                "jpeg",
+                or
+                parse_qs(
+                    urlparse(
+                        url
+                    ).query
+                ).get(
+                    "format",
+                    ["jpg"]
+                )[0]
+                or
                 "jpg"
             )
 
+            fmt = (
+                str(fmt)
+                .lower()
+                .replace(
+                    "jpeg",
+                    "jpg"
+                )
+            )
 
             result.append(
                 {
@@ -398,19 +418,26 @@ def media_from_status(
                         url,
 
                     "preview":
-                        url,
+                        (
+                            item.get("url")
+                            or
+                            url
+                        ),
 
                     "width":
-                        item.get("width"),
+                        item.get(
+                            "width"
+                        ),
 
                     "height":
-                        item.get("height"),
+                        item.get(
+                            "height"
+                        ),
 
                     "format":
                         fmt,
                 }
             )
-
 
             continue
 
@@ -422,36 +449,18 @@ def media_from_status(
 
             video_no += 1
 
-
             best = (
                 best_video_format(
                     item
                 )
             )
 
-
             if (
                 not best
                 or
                 not best.get("url")
             ):
-
                 continue
-
-
-            width = (
-                best.get("width")
-                or
-                item.get("width")
-            )
-
-
-            height = (
-                best.get("height")
-                or
-                item.get("height")
-            )
-
 
             result.append(
                 {
@@ -489,10 +498,26 @@ def media_from_status(
                         ),
 
                     "width":
-                        width,
+                        (
+                            best.get(
+                                "width"
+                            )
+                            or
+                            item.get(
+                                "width"
+                            )
+                        ),
 
                     "height":
-                        height,
+                        (
+                            best.get(
+                                "height"
+                            )
+                            or
+                            item.get(
+                                "height"
+                            )
+                        ),
 
                     "bitrate":
                         best.get(
@@ -503,7 +528,6 @@ def media_from_status(
                         "mp4",
                 }
             )
-
 
             continue
 
@@ -518,62 +542,559 @@ def media_from_status(
                 or {}
             )
 
+            if isinstance(
+                formats,
+                dict
+            ):
 
-            mosaic_url = (
-                formats.get("jpeg")
+                mosaic_url = (
+                    formats.get("jpeg")
+                    or
+                    formats.get("webp")
+                )
+
+                if mosaic_url:
+
+                    photo_no += 1
+
+                    result.append(
+                        {
+                            "type":
+                                "photo",
+
+                            "label":
+                                f"相片拼圖 {photo_no}",
+
+                            "url":
+                                mosaic_url,
+
+                            "preview":
+                                mosaic_url,
+
+                            "width":
+                                item.get(
+                                    "width"
+                                ),
+
+                            "height":
+                                item.get(
+                                    "height"
+                                ),
+
+                            "format":
+                                (
+                                    "jpg"
+
+                                    if formats.get(
+                                        "jpeg"
+                                    )
+
+                                    else
+                                    "webp"
+                                ),
+                        }
+                    )
+
+    return result
+
+
+def read_http_error_json(
+    exc
+):
+
+    try:
+
+        raw = exc.read()
+
+        if not raw:
+            return None
+
+        return json.loads(
+            raw.decode(
+                "utf-8",
+                errors="replace"
+            )
+        )
+
+    except Exception:
+        return None
+
+
+def fetch_json_once(
+    url,
+    timeout=5
+):
+
+    req = Request(
+        url,
+        headers={
+            "User-Agent":
+                "XMediaDownloader/2.0",
+
+            "Accept":
+                "application/json",
+
+            "Cache-Control":
+                "no-cache",
+        },
+    )
+
+    with urlopen(
+        req,
+        timeout=timeout
+    ) as response:
+
+        return json.loads(
+            response
+            .read()
+            .decode("utf-8")
+        )
+
+
+def fetch_fxtwitter_v2(
+    status_id
+):
+
+    url = (
+        "https://api.fxtwitter.com/"
+        f"2/status/{status_id}"
+    )
+
+    last_error = None
+
+    attempts = (
+        len(RETRY_DELAYS)
+        +
+        1
+    )
+
+    for attempt in range(
+        attempts
+    ):
+
+        try:
+
+            payload = (
+                fetch_json_once(
+                    url,
+                    timeout=5
+                )
+            )
+
+            code = (
+                as_int(
+                    payload.get(
+                        "code"
+                    )
+                )
                 or
-                formats.get("webp")
+                200
+            )
+
+            status = (
+                payload.get(
+                    "status"
+                )
+            )
+
+            if (
+                code == 200
+                and
+                isinstance(
+                    status,
+                    dict
+                )
+            ):
+
+                return (
+                    status,
+                    None
+                )
+
+            # 有些錯誤會以 HTTP 200
+            # 但 JSON code != 200 回傳
+            if (
+                code in RETRYABLE_HTTP
+                and
+                attempt <
+                attempts - 1
+            ):
+
+                time.sleep(
+                    RETRY_DELAYS[
+                        attempt
+                    ]
+                )
+
+                continue
+
+            return (
+                None,
+                {
+                    "http":
+                        code,
+
+                    "message":
+                        (
+                            payload.get(
+                                "message"
+                            )
+                            or
+                            "API_FAIL"
+                        ),
+
+                    "payload":
+                        payload,
+                }
             )
 
 
-            if mosaic_url:
+        except HTTPError as exc:
 
-                photo_no += 1
+            body = (
+                read_http_error_json(
+                    exc
+                )
+            )
 
+            last_error = {
+                "http":
+                    exc.code,
 
-                result.append(
-                    {
-                        "type":
-                            "photo",
+                "message":
+                    (
+                        (
+                            body or {}
+                        ).get(
+                            "message"
+                        )
 
-                        "label":
-                            (
-                                f"相片拼圖 "
-                                f"{photo_no}"
-                            ),
+                        if isinstance(
+                            body,
+                            dict
+                        )
 
-                        "url":
-                            mosaic_url,
+                        else
+                        None
+                    ),
 
-                        "preview":
-                            mosaic_url,
+                "payload":
+                    body,
+            }
 
-                        "width":
-                            item.get(
-                                "width"
-                            ),
+            if (
+                exc.code
+                in RETRYABLE_HTTP
+                and
+                attempt <
+                attempts - 1
+            ):
 
-                        "height":
-                            item.get(
-                                "height"
-                            ),
-
-                        "format":
-                            (
-                                "jpg"
-
-                                if formats.get(
-                                    "jpeg"
-                                )
-
-                                else
-                                "webp"
-                            ),
-                    }
+                time.sleep(
+                    RETRY_DELAYS[
+                        attempt
+                    ]
                 )
 
+                continue
 
-    return result
+            return (
+                None,
+                last_error
+            )
+
+
+        except (
+            URLError,
+            TimeoutError,
+            json.JSONDecodeError
+        ) as exc:
+
+            last_error = {
+                "http":
+                    0,
+
+                "message":
+                    str(exc),
+
+                "payload":
+                    None,
+            }
+
+            if (
+                attempt <
+                attempts - 1
+            ):
+
+                time.sleep(
+                    RETRY_DELAYS[
+                        attempt
+                    ]
+                )
+
+                continue
+
+            return (
+                None,
+                last_error
+            )
+
+    return (
+        None,
+        last_error
+        or
+        {
+            "http": 0,
+            "message": "unknown",
+            "payload": None,
+        }
+    )
+
+
+def fetch_fxtwitter_legacy(
+    status_id
+):
+
+    url = (
+        "https://api.fxtwitter.com/"
+        f"i/status/{status_id}"
+    )
+
+    try:
+
+        payload = (
+            fetch_json_once(
+                url,
+                timeout=5
+            )
+        )
+
+        code = (
+            as_int(
+                payload.get(
+                    "code"
+                )
+            )
+            or
+            200
+        )
+
+        tweet = (
+            payload.get(
+                "tweet"
+            )
+        )
+
+        if (
+            code == 200
+            and
+            isinstance(
+                tweet,
+                dict
+            )
+        ):
+
+            return (
+                tweet,
+                None
+            )
+
+        return (
+            None,
+            {
+                "http":
+                    code,
+
+                "message":
+                    (
+                        payload.get(
+                            "message"
+                        )
+                        or
+                        "API_FAIL"
+                    ),
+
+                "payload":
+                    payload,
+            }
+        )
+
+
+    except HTTPError as exc:
+
+        body = (
+            read_http_error_json(
+                exc
+            )
+        )
+
+        return (
+            None,
+            {
+                "http":
+                    exc.code,
+
+                "message":
+                    (
+                        (
+                            body or {}
+                        ).get(
+                            "message"
+                        )
+
+                        if isinstance(
+                            body,
+                            dict
+                        )
+
+                        else
+                        None
+                    ),
+
+                "payload":
+                    body,
+            }
+        )
+
+
+    except (
+        URLError,
+        TimeoutError,
+        json.JSONDecodeError
+    ) as exc:
+
+        return (
+            None,
+            {
+                "http":
+                    0,
+
+                "message":
+                    str(exc),
+
+                "payload":
+                    None,
+            }
+        )
+
+
+def fetch_status_resilient(
+    status_id
+):
+
+    status, v2_error = (
+        fetch_fxtwitter_v2(
+            status_id
+        )
+    )
+
+    if status:
+
+        return (
+            status,
+            "v2",
+            None
+        )
+
+    # v2 連續失敗後
+    # 自動改走 legacy API
+    legacy_status, legacy_error = (
+        fetch_fxtwitter_legacy(
+            status_id
+        )
+    )
+
+    if legacy_status:
+
+        return (
+            legacy_status,
+            "legacy",
+            None
+        )
+
+    return (
+        None,
+        None,
+        {
+            "v2":
+                v2_error,
+
+            "legacy":
+                legacy_error,
+        }
+    )
+
+
+def final_error_from_upstream(
+    errors
+):
+
+    v2 = (
+        (errors or {}).get(
+            "v2"
+        )
+        or {}
+    )
+
+    legacy = (
+        (errors or {}).get(
+            "legacy"
+        )
+        or {}
+    )
+
+    codes = {
+        as_int(
+            v2.get("http")
+        ),
+
+        as_int(
+            legacy.get("http")
+        ),
+    }
+
+    messages = (
+        " ".join(
+            str(x or "")
+
+            for x in (
+                v2.get("message"),
+                legacy.get("message"),
+            )
+        )
+        .upper()
+    )
+
+    if (
+        401 in codes
+        or
+        403 in codes
+        or
+        "PRIVATE"
+        in messages
+    ):
+
+        return (
+            403,
+            "這則帖子可能是私人／受保護內容，公開解析服務無法讀取"
+        )
+
+    # 只有 v2 和 legacy
+    # 都明確回 404
+    # 才當成真正不存在
+    if codes == {404}:
+
+        return (
+            404,
+            "找不到這則帖子，可能已刪除、網址無效或目前無法公開讀取"
+        )
+
+    # 只要其中一路 timeout / 5xx / 429
+    # 就視為上游暫時故障
+    return (
+        503,
+        "X 解析服務暫時不穩定，系統已自動重試仍未成功，請稍後再試"
+    )
 
 
 class handler(
@@ -590,17 +1111,14 @@ class handler(
                 )
             )
 
-
             qs = parse_qs(
                 parsed_request.query
             )
-
 
             raw_url = (
                 qs.get("url")
                 or [""]
             )[0]
-
 
             _, status_id = (
                 normalize_x_url(
@@ -608,89 +1126,54 @@ class handler(
                 )
             )
 
-
-            api_url = (
-                "https://api.fxtwitter.com/"
-                f"2/status/{status_id}"
-            )
-
-
-            req = Request(
-                api_url,
-                headers={
-                    "User-Agent":
-                        "XMediaDownloader/1.0",
-
-                    "Accept":
-                        "application/json",
-                },
-            )
-
-
-            with urlopen(
-                req,
-                timeout=15
-            ) as response:
-
-                payload = json.loads(
-                    response
-                    .read()
-                    .decode("utf-8")
+            (
+                status,
+                source,
+                errors
+            ) = (
+                fetch_status_resilient(
+                    status_id
                 )
-
-
-            code = int(
-                payload.get("code")
-                or 200
             )
 
+            if not status:
 
-            status = payload.get(
-                "status"
-            )
-
-
-            if (
-                code != 200
-                or
-                not isinstance(
-                    status,
-                    dict
-                )
-            ):
-
-                message = (
-                    payload.get(
-                        "message"
+                (
+                    http_status,
+                    message
+                ) = (
+                    final_error_from_upstream(
+                        errors
                     )
-                    or
-                    "無法取得這則帖子，可能已刪除、受保護或暫時無法讀取"
                 )
-
 
                 send_json(
                     self,
-
-                    (
-                        404
-                        if code == 404
-                        else 502
-                    ),
-
+                    http_status,
                     {
-                        "ok": False,
-                        "error": message,
+                        "ok":
+                            False,
+
+                        "error":
+                            message,
+
+                        "retryable":
+                            (
+                                http_status
+                                ==
+                                503
+                            ),
                     },
                 )
-
 
                 return
 
 
-            media = media_from_status(
-                status
+            media = (
+                media_from_status(
+                    status
+                )
             )
-
 
             if not media:
 
@@ -698,22 +1181,23 @@ class handler(
                     self,
                     404,
                     {
-                        "ok": False,
+                        "ok":
+                            False,
 
                         "error":
                             "這則帖子沒有可下載的 X 圖片或影片",
                     },
                 )
 
-
                 return
 
 
             author = (
-                status.get("author")
+                status.get(
+                    "author"
+                )
                 or {}
             )
-
 
             send_json(
                 self,
@@ -722,26 +1206,36 @@ class handler(
                     "ok":
                         True,
 
+                    "source":
+                        source,
+
                     "post":
                         {
                             "id":
                                 (
-                                    status.get("id")
+                                    status.get(
+                                        "id"
+                                    )
                                     or
                                     status_id
                                 ),
 
                             "url":
                                 (
-                                    status.get("url")
+                                    status.get(
+                                        "url"
+                                    )
                                     or
                                     raw_url
                                 ),
 
                             "text":
                                 (
-                                    status.get("text")
-                                    or ""
+                                    status.get(
+                                        "text"
+                                    )
+                                    or
+                                    ""
                                 ),
 
                             "author":
@@ -755,7 +1249,8 @@ class handler(
                                             author.get(
                                                 "display_name"
                                             )
-                                            or ""
+                                            or
+                                            ""
                                         ),
 
                                     "username":
@@ -767,7 +1262,8 @@ class handler(
                                             author.get(
                                                 "username"
                                             )
-                                            or ""
+                                            or
+                                            ""
                                         ),
                                 },
                         },
@@ -784,7 +1280,8 @@ class handler(
                 self,
                 400,
                 {
-                    "ok": False,
+                    "ok":
+                        False,
 
                     "error":
                         str(exc),
@@ -792,53 +1289,19 @@ class handler(
             )
 
 
-        except HTTPError as exc:
+        except Exception as exc:
 
-            status_code = (
-                404
-
-                if exc.code == 404
-
-                else 502
+            print(
+                "Unhandled error:",
+                repr(exc)
             )
-
-
-            send_json(
-                self,
-                status_code,
-                {
-                    "ok": False,
-
-                    "error":
-                        (
-                            "上游服務回應錯誤"
-                            f"（HTTP {exc.code}）"
-                        ),
-                },
-            )
-
-
-        except URLError:
-
-            send_json(
-                self,
-                502,
-                {
-                    "ok": False,
-
-                    "error":
-                        "目前無法連線到 X 媒體解析服務，請稍後再試",
-                },
-            )
-
-
-        except Exception:
 
             send_json(
                 self,
                 500,
                 {
-                    "ok": False,
+                    "ok":
+                        False,
 
                     "error":
                         "伺服器發生未預期錯誤，請稍後再試",
