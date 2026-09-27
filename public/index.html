@@ -1,0 +1,1079 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <meta name="theme-color" content="#f4f6f8">
+
+  <title>X 影片下載器</title>
+
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --blue: #21a7ed;
+      --blue-dark: #1599dc;
+      --gray: #6f8290;
+      --red: #e91f5f;
+      --text: #26313a;
+      --muted: #89939a;
+      --border: #d5dade;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      background: var(--bg);
+
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "SF Pro Display",
+        "PingFang TC",
+        "PingFang HK",
+        "Helvetica Neue",
+        Arial,
+        sans-serif;
+
+      color: var(--text);
+
+      -webkit-font-smoothing: antialiased;
+
+      padding:
+        calc(72px + env(safe-area-inset-top))
+        16px
+        calc(40px + env(safe-area-inset-bottom));
+    }
+
+    .wrapper {
+      width: min(100%, 780px);
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+
+      border-radius: 22px;
+
+      padding:
+        42px
+        40px
+        42px;
+
+      box-shadow:
+        0 7px 20px
+        rgba(35, 45, 52, 0.16);
+    }
+
+    h1 {
+      margin:
+        0
+        0
+        40px;
+
+      text-align: center;
+
+      color: var(--blue);
+
+      font-size:
+        clamp(
+          32px,
+          7vw,
+          44px
+        );
+
+      font-weight: 750;
+
+      letter-spacing: 0.02em;
+    }
+
+    .input-row {
+      display: grid;
+
+      grid-template-columns:
+        minmax(0, 1fr)
+        auto
+        auto;
+
+      gap: 14px;
+    }
+
+    #urlInput {
+      width: 100%;
+
+      height: 60px;
+
+      border:
+        2px solid
+        #b9bec2;
+
+      border-radius: 14px;
+
+      padding:
+        0
+        20px;
+
+      background: white;
+
+      color: #20282e;
+
+      font-size: 18px;
+
+      outline: none;
+
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    #urlInput:focus {
+      border-color: var(--blue);
+
+      box-shadow:
+        0 0 0 3px
+        rgba(33, 167, 237, 0.12);
+    }
+
+    #urlInput::placeholder {
+      color: #a4a8ac;
+    }
+
+    button,
+    .download-button {
+      border: 0;
+
+      font-family: inherit;
+
+      cursor: pointer;
+
+      -webkit-tap-highlight-color:
+        transparent;
+
+      touch-action: manipulation;
+    }
+
+    button:active,
+    .download-button:active {
+      transform: scale(0.99);
+    }
+
+    .paste-button,
+    .clear-button {
+      height: 60px;
+
+      min-width: 104px;
+
+      border-radius: 14px;
+
+      color: white;
+
+      font-size: 19px;
+
+      font-weight: 650;
+    }
+
+    .paste-button {
+      background: var(--gray);
+    }
+
+    .clear-button {
+      background: var(--red);
+    }
+
+    .fetch-button {
+      width: 100%;
+
+      height: 78px;
+
+      margin-top: 38px;
+
+      border-radius: 14px;
+
+      background: var(--blue);
+
+      color: white;
+
+      font-size: 23px;
+
+      font-weight: 700;
+
+      box-shadow:
+        inset
+        0
+        -4px
+        0
+        rgba(0, 0, 0, 0.04);
+    }
+
+    .fetch-button:disabled {
+      opacity: 0.65;
+      cursor: default;
+    }
+
+    .message {
+      display: none;
+
+      margin-top: 20px;
+
+      padding: 14px 16px;
+
+      border-radius: 12px;
+
+      font-size: 15px;
+
+      line-height: 1.5;
+    }
+
+    .message.info {
+      display: block;
+
+      color: #52606a;
+
+      background: #f3f6f8;
+    }
+
+    .message.error {
+      display: block;
+
+      color: #b41545;
+
+      background: #fff0f3;
+    }
+
+    .results {
+      display: none;
+
+      margin-top: 25px;
+    }
+
+    .results.show {
+      display: block;
+    }
+
+    .post-meta {
+      margin:
+        0
+        2px
+        14px;
+
+      color: #69747c;
+
+      font-size: 14px;
+
+      line-height: 1.5;
+    }
+
+    .media-list {
+      display: grid;
+      gap: 15px;
+    }
+
+    .media-item {
+      display: grid;
+
+      grid-template-columns:
+        88px
+        minmax(0, 1fr)
+        auto;
+
+      gap: 14px;
+
+      align-items: center;
+
+      border:
+        1px solid
+        #e1e6e9;
+
+      border-radius: 16px;
+
+      padding: 12px;
+
+      background: #fff;
+    }
+
+    .thumbnail {
+      width: 88px;
+      height: 88px;
+
+      border-radius: 12px;
+
+      object-fit: cover;
+
+      background: #eef2f4;
+    }
+
+    .media-name {
+      font-size: 18px;
+
+      font-weight: 700;
+    }
+
+    .media-detail {
+      margin-top: 6px;
+
+      color: var(--muted);
+
+      font-size: 13px;
+
+      line-height: 1.4;
+    }
+
+    .download-button {
+      display: inline-flex;
+
+      align-items: center;
+      justify-content: center;
+
+      min-width: 112px;
+      height: 54px;
+
+      padding:
+        0
+        17px;
+
+      border-radius: 12px;
+
+      background: var(--blue);
+
+      color: white;
+
+      font-size: 16px;
+
+      font-weight: 700;
+
+      text-decoration: none;
+
+      white-space: nowrap;
+    }
+
+    .note {
+      margin-top: 17px;
+
+      color: #90999f;
+
+      font-size: 12px;
+
+      line-height: 1.5;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding-top:
+          calc(
+            76px +
+            env(safe-area-inset-top)
+          );
+      }
+
+      .card {
+        padding:
+          36px
+          18px
+          30px;
+      }
+
+      h1 {
+        margin-bottom: 34px;
+      }
+
+      .input-row {
+        grid-template-columns:
+          minmax(0, 1fr)
+          74px
+          74px;
+
+        gap: 10px;
+      }
+
+      #urlInput {
+        height: 58px;
+
+        padding:
+          0
+          13px;
+
+        /*
+         * iPhone Safari:
+         * 16px 以上避免點輸入框自動放大。
+         */
+        font-size: 16px;
+      }
+
+      .paste-button,
+      .clear-button {
+        height: 58px;
+
+        min-width: 0;
+
+        padding: 0 6px;
+
+        font-size: 17px;
+      }
+
+      .fetch-button {
+        height: 72px;
+
+        margin-top: 31px;
+
+        font-size: 21px;
+      }
+
+      .media-item {
+        grid-template-columns:
+          72px
+          minmax(0, 1fr);
+      }
+
+      .thumbnail {
+        width: 72px;
+        height: 72px;
+      }
+
+      .download-button {
+        grid-column:
+          1 / -1;
+
+        width: 100%;
+
+        height: 54px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="wrapper">
+
+    <section class="card">
+
+      <h1>X 影片下載器</h1>
+
+      <div class="input-row">
+
+        <input
+          id="urlInput"
+          type="url"
+          inputmode="url"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="貼上 X 或 Twitter 連結..."
+        >
+
+        <button
+          id="pasteButton"
+          class="paste-button"
+          type="button"
+        >
+          貼上
+        </button>
+
+        <button
+          id="clearButton"
+          class="clear-button"
+          type="button"
+        >
+          清除
+        </button>
+
+      </div>
+
+      <button
+        id="fetchButton"
+        class="fetch-button"
+        type="button"
+      >
+        獲取影片
+      </button>
+
+      <div
+        id="message"
+        class="message"
+        role="status"
+      ></div>
+
+      <section
+        id="results"
+        class="results"
+      >
+
+        <div
+          id="postMeta"
+          class="post-meta"
+        ></div>
+
+        <div
+          id="mediaList"
+          class="media-list"
+        ></div>
+
+        <div class="note">
+          僅支援公開 X / Twitter 帖子。請只下載你有權保存或使用的內容。
+        </div>
+
+      </section>
+
+    </section>
+
+  </main>
+
+
+  <script>
+    const urlInput =
+      document.getElementById(
+        "urlInput"
+      );
+
+    const pasteButton =
+      document.getElementById(
+        "pasteButton"
+      );
+
+    const clearButton =
+      document.getElementById(
+        "clearButton"
+      );
+
+    const fetchButton =
+      document.getElementById(
+        "fetchButton"
+      );
+
+    const message =
+      document.getElementById(
+        "message"
+      );
+
+    const results =
+      document.getElementById(
+        "results"
+      );
+
+    const postMeta =
+      document.getElementById(
+        "postMeta"
+      );
+
+    const mediaList =
+      document.getElementById(
+        "mediaList"
+      );
+
+
+    function showMessage(
+      text,
+      type = "info"
+    ) {
+      message.textContent =
+        text;
+
+      message.className =
+        `message ${type}`;
+    }
+
+
+    function hideMessage() {
+      message.textContent =
+        "";
+
+      message.className =
+        "message";
+    }
+
+
+    function resetResults() {
+      results.classList.remove(
+        "show"
+      );
+
+      postMeta.textContent =
+        "";
+
+      mediaList.innerHTML =
+        "";
+    }
+
+
+    /*
+     * 所有下載現在都走：
+     *
+     * /api/download
+     *
+     * 而不是舊的：
+     *
+     * /download/video/...
+     * /download/photo/...
+     *
+     * api/download.mjs 會負責真正串流，
+     * 並處理 Safari Range request。
+     */
+    function makeDownloadUrl(
+      rawUrl,
+      item,
+      index
+    ) {
+      try {
+        const mediaUrl =
+          new URL(rawUrl);
+
+        const allowedHost =
+          mediaUrl.hostname ===
+            "video.twimg.com" ||
+          mediaUrl.hostname ===
+            "pbs.twimg.com";
+
+        if (!allowedHost) {
+          return rawUrl;
+        }
+
+        let extension;
+
+        if (
+          item.type === "photo"
+        ) {
+          extension =
+            (
+              item.format ||
+              "jpg"
+            )
+            .toLowerCase()
+            .replace(
+              "jpeg",
+              "jpg"
+            );
+        } else {
+          extension =
+            "mp4";
+        }
+
+        const typeName =
+          item.type === "photo"
+            ? "photo"
+            : "video";
+
+        const filename =
+          `X-${typeName}-${index + 1}.${extension}`;
+
+        return (
+          "/api/download" +
+          "?url=" +
+          encodeURIComponent(
+            rawUrl
+          ) +
+          "&filename=" +
+          encodeURIComponent(
+            filename
+          )
+        );
+
+      } catch (error) {
+        console.error(
+          error
+        );
+
+        return rawUrl;
+      }
+    }
+
+
+    function getMediaDetail(
+      item
+    ) {
+      let resolution =
+        "最高可用畫質";
+
+      if (
+        item.width &&
+        item.height
+      ) {
+        resolution =
+          `${item.width} × ${item.height}`;
+      }
+
+      if (
+        item.type === "video" ||
+        item.type === "gif"
+      ) {
+        if (item.bitrate) {
+          return (
+            `${resolution} · ` +
+            `${(
+              item.bitrate /
+              1000000
+            ).toFixed(1)} Mbps · MP4`
+          );
+        }
+
+        return (
+          `${resolution} · MP4`
+        );
+      }
+
+      const format =
+        (
+          item.format ||
+          "JPG"
+        ).toUpperCase();
+
+      return (
+        `${resolution} · ${format}`
+      );
+    }
+
+
+    function renderResults(
+      data
+    ) {
+      resetResults();
+
+      const author =
+        data.post?.author || {};
+
+      let authorText =
+        "X 帖子";
+
+      if (author.username) {
+        authorText =
+          `@${author.username}`;
+      } else if (author.name) {
+        authorText =
+          author.name;
+      }
+
+      postMeta.textContent =
+        `${authorText} · 找到 ${data.media.length} 個可下載媒體`;
+
+      data.media.forEach(
+        (item, index) => {
+
+          const row =
+            document.createElement(
+              "article"
+            );
+
+          row.className =
+            "media-item";
+
+
+          const thumbnail =
+            document.createElement(
+              "img"
+            );
+
+          thumbnail.className =
+            "thumbnail";
+
+          thumbnail.loading =
+            "lazy";
+
+          thumbnail.alt =
+            item.label ||
+            `媒體 ${index + 1}`;
+
+          if (item.preview) {
+            thumbnail.src =
+              item.preview;
+          } else if (
+            item.type === "photo"
+          ) {
+            thumbnail.src =
+              item.url;
+          }
+
+          thumbnail.onerror =
+            function () {
+              this.style.opacity =
+                "0.15";
+            };
+
+
+          const info =
+            document.createElement(
+              "div"
+            );
+
+
+          const name =
+            document.createElement(
+              "div"
+            );
+
+          name.className =
+            "media-name";
+
+          name.textContent =
+            item.label ||
+            `媒體 ${index + 1}`;
+
+
+          const detail =
+            document.createElement(
+              "div"
+            );
+
+          detail.className =
+            "media-detail";
+
+          detail.textContent =
+            getMediaDetail(
+              item
+            );
+
+
+          info.append(
+            name,
+            detail
+          );
+
+
+          const download =
+            document.createElement(
+              "a"
+            );
+
+          download.className =
+            "download-button";
+
+          download.href =
+            makeDownloadUrl(
+              item.url,
+              item,
+              index
+            );
+
+          /*
+           * Safari 最終是否顯示內建下載提示，
+           * 主要由後端 Content-Disposition
+           * 控制。
+           */
+          download.setAttribute(
+            "download",
+            ""
+          );
+
+          download.setAttribute(
+            "rel",
+            "nofollow"
+          );
+
+          if (
+            item.type === "photo"
+          ) {
+            download.textContent =
+              "下載原圖";
+          } else {
+            download.textContent =
+              "下載影片";
+          }
+
+
+          row.append(
+            thumbnail,
+            info,
+            download
+          );
+
+          mediaList.appendChild(
+            row
+          );
+        }
+      );
+
+      results.classList.add(
+        "show"
+      );
+    }
+
+
+    async function getMedia() {
+      const url =
+        urlInput.value.trim();
+
+      if (!url) {
+        showMessage(
+          "請先貼上 X / Twitter 帖子連結。",
+          "error"
+        );
+
+        urlInput.focus();
+
+        return;
+      }
+
+      hideMessage();
+      resetResults();
+
+      fetchButton.disabled =
+        true;
+
+      fetchButton.textContent =
+        "正在獲取...";
+
+      try {
+        const response =
+          await fetch(
+            "/api?url=" +
+            encodeURIComponent(
+              url
+            ),
+            {
+              method: "GET",
+
+              headers: {
+                "Accept":
+                  "application/json"
+              },
+
+              cache:
+                "no-store"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (
+          !response.ok ||
+          !data.ok
+        ) {
+          throw new Error(
+            data.error ||
+            `獲取失敗（HTTP ${response.status}）`
+          );
+        }
+
+        if (
+          !Array.isArray(
+            data.media
+          ) ||
+          data.media.length === 0
+        ) {
+          throw new Error(
+            "這則帖子沒有找到可下載的圖片或影片。"
+          );
+        }
+
+        renderResults(
+          data
+        );
+
+        showMessage(
+          `成功找到 ${data.media.length} 個媒體，已自動選擇最高可用畫質。`,
+          "info"
+        );
+
+      } catch (error) {
+        console.error(
+          error
+        );
+
+        showMessage(
+          error?.message ||
+          "獲取失敗，請稍後再試。",
+          "error"
+        );
+
+      } finally {
+        fetchButton.disabled =
+          false;
+
+        fetchButton.textContent =
+          "獲取影片";
+      }
+    }
+
+
+    pasteButton.addEventListener(
+      "click",
+      async () => {
+
+        hideMessage();
+
+        try {
+          const clipboardText =
+            await navigator.clipboard
+              .readText();
+
+          if (
+            clipboardText &&
+            clipboardText.trim()
+          ) {
+            urlInput.value =
+              clipboardText.trim();
+
+            urlInput.focus();
+
+          } else {
+            showMessage(
+              "剪貼簿目前沒有文字。",
+              "info"
+            );
+          }
+
+        } catch (error) {
+          urlInput.focus();
+
+          showMessage(
+            "Safari 沒有允許直接讀取剪貼簿，請長按輸入框後選擇「貼上」。",
+            "info"
+          );
+        }
+      }
+    );
+
+
+    clearButton.addEventListener(
+      "click",
+      () => {
+
+        urlInput.value =
+          "";
+
+        hideMessage();
+
+        resetResults();
+
+        urlInput.focus();
+      }
+    );
+
+
+    fetchButton.addEventListener(
+      "click",
+      getMedia
+    );
+
+
+    urlInput.addEventListener(
+      "keydown",
+      event => {
+
+        if (
+          event.key === "Enter"
+        ) {
+          getMedia();
+        }
+      }
+    );
+
+  </script>
+
+</body>
+</html>
