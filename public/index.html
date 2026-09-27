@@ -65,27 +65,14 @@
 
     .card {
       background: #fff;
-
       border-radius: 22px;
-
-      padding:
-        42px
-        40px
-        42px;
-
-      box-shadow:
-        0 7px 20px
-        rgba(35, 45, 52, 0.16);
+      padding: 42px 40px 42px;
+      box-shadow: 0 7px 20px rgba(35, 45, 52, 0.16);
     }
 
     h1 {
-      margin:
-        0
-        0
-        40px;
-
+      margin: 0 0 40px;
       text-align: center;
-
       color: var(--blue);
 
       font-size:
@@ -96,7 +83,6 @@
         );
 
       font-weight: 750;
-
       letter-spacing: 0.02em;
     }
 
@@ -113,7 +99,6 @@
 
     #urlInput {
       width: 100%;
-
       height: 60px;
 
       border:
@@ -127,11 +112,8 @@
         20px;
 
       background: white;
-
       color: #20282e;
-
       font-size: 18px;
-
       outline: none;
 
       -webkit-appearance: none;
@@ -153,14 +135,9 @@
     button,
     .download-button {
       border: 0;
-
       font-family: inherit;
-
       cursor: pointer;
-
-      -webkit-tap-highlight-color:
-        transparent;
-
+      -webkit-tap-highlight-color: transparent;
       touch-action: manipulation;
     }
 
@@ -172,15 +149,10 @@
     .paste-button,
     .clear-button {
       height: 60px;
-
       min-width: 104px;
-
       border-radius: 14px;
-
       color: white;
-
       font-size: 19px;
-
       font-weight: 650;
     }
 
@@ -194,19 +166,12 @@
 
     .fetch-button {
       width: 100%;
-
       height: 78px;
-
       margin-top: 38px;
-
       border-radius: 14px;
-
       background: var(--blue);
-
       color: white;
-
       font-size: 23px;
-
       font-weight: 700;
 
       box-shadow:
@@ -224,37 +189,27 @@
 
     .message {
       display: none;
-
       margin-top: 20px;
-
       padding: 14px 16px;
-
       border-radius: 12px;
-
       font-size: 15px;
-
       line-height: 1.5;
     }
 
     .message.info {
       display: block;
-
       color: #52606a;
-
       background: #f3f6f8;
     }
 
     .message.error {
       display: block;
-
       color: #b41545;
-
       background: #fff0f3;
     }
 
     .results {
       display: none;
-
       margin-top: 25px;
     }
 
@@ -263,15 +218,9 @@
     }
 
     .post-meta {
-      margin:
-        0
-        2px
-        14px;
-
+      margin: 0 2px 14px;
       color: #69747c;
-
       font-size: 14px;
-
       line-height: 1.5;
     }
 
@@ -289,7 +238,6 @@
         auto;
 
       gap: 14px;
-
       align-items: center;
 
       border:
@@ -297,42 +245,32 @@
         #e1e6e9;
 
       border-radius: 16px;
-
       padding: 12px;
-
       background: #fff;
     }
 
     .thumbnail {
       width: 88px;
       height: 88px;
-
       border-radius: 12px;
-
       object-fit: cover;
-
       background: #eef2f4;
     }
 
     .media-name {
       font-size: 18px;
-
       font-weight: 700;
     }
 
     .media-detail {
       margin-top: 6px;
-
       color: var(--muted);
-
       font-size: 13px;
-
       line-height: 1.4;
     }
 
     .download-button {
       display: inline-flex;
-
       align-items: center;
       justify-content: center;
 
@@ -344,27 +282,18 @@
         17px;
 
       border-radius: 12px;
-
       background: var(--blue);
-
       color: white;
-
       font-size: 16px;
-
       font-weight: 700;
-
       text-decoration: none;
-
       white-space: nowrap;
     }
 
     .note {
       margin-top: 17px;
-
       color: #90999f;
-
       font-size: 12px;
-
       line-height: 1.5;
     }
 
@@ -399,34 +328,21 @@
 
       #urlInput {
         height: 58px;
-
-        padding:
-          0
-          13px;
-
-        /*
-         * iPhone Safari:
-         * 16px 以上避免點輸入框自動放大。
-         */
+        padding: 0 13px;
         font-size: 16px;
       }
 
       .paste-button,
       .clear-button {
         height: 58px;
-
         min-width: 0;
-
         padding: 0 6px;
-
         font-size: 17px;
       }
 
       .fetch-button {
         height: 72px;
-
         margin-top: 31px;
-
         font-size: 21px;
       }
 
@@ -442,11 +358,8 @@
       }
 
       .download-button {
-        grid-column:
-          1 / -1;
-
+        grid-column: 1 / -1;
         width: 100%;
-
         height: 54px;
       }
     }
@@ -607,19 +520,6 @@
     }
 
 
-    /*
-     * 所有下載現在都走：
-     *
-     * /api/download
-     *
-     * 而不是舊的：
-     *
-     * /download/video/...
-     * /download/photo/...
-     *
-     * api/download.mjs 會負責真正串流，
-     * 並處理 Safari Range request。
-     */
     function makeDownloadUrl(
       rawUrl,
       item,
@@ -668,7 +568,7 @@
           `X-${typeName}-${index + 1}.${extension}`;
 
         return (
-          "/api/download" +
+          "/download" +
           "?url=" +
           encodeURIComponent(
             rawUrl
@@ -854,11 +754,6 @@
               index
             );
 
-          /*
-           * Safari 最終是否顯示內建下載提示，
-           * 主要由後端 Content-Disposition
-           * 控制。
-           */
           download.setAttribute(
             "download",
             ""
