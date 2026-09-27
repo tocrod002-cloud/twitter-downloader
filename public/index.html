@@ -22,7 +22,6 @@
       --red: #e91f5f;
       --text: #26313a;
       --muted: #89939a;
-      --border: #d5dade;
     }
 
     * {
@@ -486,6 +485,18 @@
       );
 
 
+    function hideKeyboard() {
+      if (
+        document.activeElement &&
+        typeof document.activeElement.blur === "function"
+      ) {
+        document.activeElement.blur();
+      }
+
+      urlInput.blur();
+    }
+
+
     function showMessage(
       text,
       type = "info"
@@ -794,6 +805,8 @@
 
 
     async function getMedia() {
+      hideKeyboard();
+
       const url =
         urlInput.value.trim();
 
@@ -802,8 +815,6 @@
           "請先貼上 X / Twitter 帖子連結。",
           "error"
         );
-
-        urlInput.focus();
 
         return;
       }
@@ -899,6 +910,7 @@
       "click",
       async () => {
 
+        hideKeyboard();
         hideMessage();
 
         try {
@@ -913,7 +925,13 @@
             urlInput.value =
               clipboardText.trim();
 
-            urlInput.focus();
+            /*
+             * 關鍵修改：
+             * 貼上後不再 focus 輸入框，
+             * 並再次 blur，避免 iPhone Safari
+             * 自動彈出鍵盤。
+             */
+            hideKeyboard();
 
           } else {
             showMessage(
@@ -923,10 +941,10 @@
           }
 
         } catch (error) {
-          urlInput.focus();
+          hideKeyboard();
 
           showMessage(
-            "Safari 沒有允許直接讀取剪貼簿，請長按輸入框後選擇「貼上」。",
+            "Safari 沒有允許直接讀取剪貼簿，請手動長按輸入框貼上。",
             "info"
           );
         }
@@ -941,11 +959,9 @@
         urlInput.value =
           "";
 
+        hideKeyboard();
         hideMessage();
-
         resetResults();
-
-        urlInput.focus();
       }
     );
 
@@ -963,6 +979,7 @@
         if (
           event.key === "Enter"
         ) {
+          hideKeyboard();
           getMedia();
         }
       }
