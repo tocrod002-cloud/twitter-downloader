@@ -1,879 +1,1079 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f4f6f8">
-<title>X 影片下載器</title>
+  <meta charset="utf-8">
 
-<style>
-:root {
-  --blue: #20a4ec;
-  --gray: #708390;
-  --pink: #e91e60;
-  --bg: #f4f6f8;
-  --text: #29333b;
-}
-* { box-sizing: border-box; }
-html, body {
-  margin: 0;
-  min-height: 100%;
-}
-body {
-  background: var(--bg);
-  font-family: -apple-system, BlinkMacSystemFont,
-    "PingFang TC", "Noto Sans TC", Arial, sans-serif;
-  color: var(--text);
-  padding: calc(74px + env(safe-area-inset-top))
-    16px 40px;
-  -webkit-font-smoothing: antialiased;
-}
-.card {
-  max-width: 780px;
-  margin: auto;
-  background: white;
-  border-radius: 22px;
-  padding: 38px 38px 42px;
-  box-shadow: 0 7px 20px rgba(35,45,52,.14);
-}
-h1 {
-  text-align: center;
-  color: var(--blue);
-  font-size: clamp(30px, 7vw, 43px);
-  font-weight: 750;
-  margin: 0 0 38px;
-}
-.input-row {
-  display: grid;
-  grid-template-columns: minmax(0,1fr) auto auto;
-  gap: 12px;
-}
-#urlInput {
-  width: 100%;
-  min-width: 0;
-  height: 60px;
-  padding: 0 16px;
-  border: 2px solid #bdc2c6;
-  border-radius: 14px;
-  background: white;
-  color: var(--text);
-  font-size: 16px;
-  outline: none;
-  -webkit-appearance: none;
-}
-#urlInput:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(32,164,236,.12);
-}
-button, .download-button {
-  border: none;
-  border-radius: 13px;
-  font-family: inherit;
-  font-weight: 650;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-.paste, .clear {
-  height: 60px;
-  min-width: 96px;
-  padding: 0 16px;
-  color: white;
-  font-size: 18px;
-}
-.paste { background: var(--gray); }
-.clear { background: var(--pink); }
-.primary {
-  width: 100%;
-  height: 76px;
-  margin-top: 35px;
-  background: var(--blue);
-  color: white;
-  font-size: 22px;
-  box-shadow: inset 0 -4px rgba(0,0,0,.04);
-}
-.primary:disabled {
-  opacity: .65;
-  cursor: wait;
-}
-.message {
-  display: none;
-  margin-top: 20px;
-  padding: 15px;
-  border-radius: 12px;
-  font-size: 15px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.message.info {
-  display: block;
-  color: #52616b;
-  background: #f0f4f7;
-}
-.message.error {
-  display: block;
-  color: #b21947;
-  background: #fff0f3;
-}
-.results {
-  display: none;
-  margin-top: 24px;
-}
-.results.show { display: block; }
-.meta {
-  color: #697780;
-  font-size: 14px;
-  margin-bottom: 15px;
-}
-.media-list {
-  display: grid;
-  gap: 14px;
-}
-.media-item {
-  display: grid;
-  grid-template-columns: 84px minmax(0,1fr);
-  gap: 13px;
-  padding: 13px;
-  border: 1px solid #e1e5e9;
-  border-radius: 15px;
-  background: white;
-}
-.thumbnail {
-  width: 84px;
-  height: 84px;
-  border-radius: 11px;
-  object-fit: cover;
-  background: #edf1f4;
-}
-.media-name {
-  font-size: 18px;
-  font-weight: 700;
-  padding-top: 7px;
-}
-.media-detail {
-  margin-top: 7px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #87929b;
-}
-.download-button {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 55px;
-  color: white;
-  background: var(--blue);
-  font-size: 17px;
-  text-decoration: none;
-}
-.note {
-  color: #969ea5;
-  font-size: 12px;
-  line-height: 1.5;
-  margin-top: 16px;
-}
-@media (max-width: 600px) {
-  .card {
-    padding: 34px 18px 30px;
-  }
-  h1 { margin-bottom: 33px; }
-  .input-row {
-    grid-template-columns: minmax(0,1fr) 74px 74px;
-    gap: 10px;
-  }
-  #urlInput {
-    height: 57px;
-    padding: 0 13px;
-  }
-  .paste, .clear {
-    height: 57px;
-    min-width: 0;
-    padding: 0 5px;
-    font-size: 17px;
-  }
-  .primary {
-    height: 72px;
-    margin-top: 30px;
-  }
-}
-</style>
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  >
+
+  <meta name="theme-color" content="#f4f6f8">
+
+  <title>X 影片下載器</title>
+
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --blue: #21a7ed;
+      --blue-dark: #1599dc;
+      --gray: #6f8290;
+      --red: #e91f5f;
+      --text: #26313a;
+      --muted: #89939a;
+      --border: #d5dade;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+    }
+
+    body {
+      background: var(--bg);
+
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "SF Pro Display",
+        "PingFang TC",
+        "PingFang HK",
+        "Helvetica Neue",
+        Arial,
+        sans-serif;
+
+      color: var(--text);
+
+      -webkit-font-smoothing: antialiased;
+
+      padding:
+        calc(72px + env(safe-area-inset-top))
+        16px
+        calc(40px + env(safe-area-inset-bottom));
+    }
+
+    .wrapper {
+      width: min(100%, 780px);
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #fff;
+
+      border-radius: 22px;
+
+      padding:
+        42px
+        40px
+        42px;
+
+      box-shadow:
+        0 7px 20px
+        rgba(35, 45, 52, 0.16);
+    }
+
+    h1 {
+      margin:
+        0
+        0
+        40px;
+
+      text-align: center;
+
+      color: var(--blue);
+
+      font-size:
+        clamp(
+          32px,
+          7vw,
+          44px
+        );
+
+      font-weight: 750;
+
+      letter-spacing: 0.02em;
+    }
+
+    .input-row {
+      display: grid;
+
+      grid-template-columns:
+        minmax(0, 1fr)
+        auto
+        auto;
+
+      gap: 14px;
+    }
+
+    #urlInput {
+      width: 100%;
+
+      height: 60px;
+
+      border:
+        2px solid
+        #b9bec2;
+
+      border-radius: 14px;
+
+      padding:
+        0
+        20px;
+
+      background: white;
+
+      color: #20282e;
+
+      font-size: 18px;
+
+      outline: none;
+
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    #urlInput:focus {
+      border-color: var(--blue);
+
+      box-shadow:
+        0 0 0 3px
+        rgba(33, 167, 237, 0.12);
+    }
+
+    #urlInput::placeholder {
+      color: #a4a8ac;
+    }
+
+    button,
+    .download-button {
+      border: 0;
+
+      font-family: inherit;
+
+      cursor: pointer;
+
+      -webkit-tap-highlight-color:
+        transparent;
+
+      touch-action: manipulation;
+    }
+
+    button:active,
+    .download-button:active {
+      transform: scale(0.99);
+    }
+
+    .paste-button,
+    .clear-button {
+      height: 60px;
+
+      min-width: 104px;
+
+      border-radius: 14px;
+
+      color: white;
+
+      font-size: 19px;
+
+      font-weight: 650;
+    }
+
+    .paste-button {
+      background: var(--gray);
+    }
+
+    .clear-button {
+      background: var(--red);
+    }
+
+    .fetch-button {
+      width: 100%;
+
+      height: 78px;
+
+      margin-top: 38px;
+
+      border-radius: 14px;
+
+      background: var(--blue);
+
+      color: white;
+
+      font-size: 23px;
+
+      font-weight: 700;
+
+      box-shadow:
+        inset
+        0
+        -4px
+        0
+        rgba(0, 0, 0, 0.04);
+    }
+
+    .fetch-button:disabled {
+      opacity: 0.65;
+      cursor: default;
+    }
+
+    .message {
+      display: none;
+
+      margin-top: 20px;
+
+      padding: 14px 16px;
+
+      border-radius: 12px;
+
+      font-size: 15px;
+
+      line-height: 1.5;
+    }
+
+    .message.info {
+      display: block;
+
+      color: #52606a;
+
+      background: #f3f6f8;
+    }
+
+    .message.error {
+      display: block;
+
+      color: #b41545;
+
+      background: #fff0f3;
+    }
+
+    .results {
+      display: none;
+
+      margin-top: 25px;
+    }
+
+    .results.show {
+      display: block;
+    }
+
+    .post-meta {
+      margin:
+        0
+        2px
+        14px;
+
+      color: #69747c;
+
+      font-size: 14px;
+
+      line-height: 1.5;
+    }
+
+    .media-list {
+      display: grid;
+      gap: 15px;
+    }
+
+    .media-item {
+      display: grid;
+
+      grid-template-columns:
+        88px
+        minmax(0, 1fr)
+        auto;
+
+      gap: 14px;
+
+      align-items: center;
+
+      border:
+        1px solid
+        #e1e6e9;
+
+      border-radius: 16px;
+
+      padding: 12px;
+
+      background: #fff;
+    }
+
+    .thumbnail {
+      width: 88px;
+      height: 88px;
+
+      border-radius: 12px;
+
+      object-fit: cover;
+
+      background: #eef2f4;
+    }
+
+    .media-name {
+      font-size: 18px;
+
+      font-weight: 700;
+    }
+
+    .media-detail {
+      margin-top: 6px;
+
+      color: var(--muted);
+
+      font-size: 13px;
+
+      line-height: 1.4;
+    }
+
+    .download-button {
+      display: inline-flex;
+
+      align-items: center;
+      justify-content: center;
+
+      min-width: 112px;
+      height: 54px;
+
+      padding:
+        0
+        17px;
+
+      border-radius: 12px;
+
+      background: var(--blue);
+
+      color: white;
+
+      font-size: 16px;
+
+      font-weight: 700;
+
+      text-decoration: none;
+
+      white-space: nowrap;
+    }
+
+    .note {
+      margin-top: 17px;
+
+      color: #90999f;
+
+      font-size: 12px;
+
+      line-height: 1.5;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding-top:
+          calc(
+            76px +
+            env(safe-area-inset-top)
+          );
+      }
+
+      .card {
+        padding:
+          36px
+          18px
+          30px;
+      }
+
+      h1 {
+        margin-bottom: 34px;
+      }
+
+      .input-row {
+        grid-template-columns:
+          minmax(0, 1fr)
+          74px
+          74px;
+
+        gap: 10px;
+      }
+
+      #urlInput {
+        height: 58px;
+
+        padding:
+          0
+          13px;
+
+        /*
+         * iPhone Safari:
+         * 16px 以上避免點輸入框自動放大。
+         */
+        font-size: 16px;
+      }
+
+      .paste-button,
+      .clear-button {
+        height: 58px;
+
+        min-width: 0;
+
+        padding: 0 6px;
+
+        font-size: 17px;
+      }
+
+      .fetch-button {
+        height: 72px;
+
+        margin-top: 31px;
+
+        font-size: 21px;
+      }
+
+      .media-item {
+        grid-template-columns:
+          72px
+          minmax(0, 1fr);
+      }
+
+      .thumbnail {
+        width: 72px;
+        height: 72px;
+      }
+
+      .download-button {
+        grid-column:
+          1 / -1;
+
+        width: 100%;
+
+        height: 54px;
+      }
+    }
+  </style>
 </head>
 
 <body>
-<main class="card">
-  <h1>X 影片下載器</h1>
 
-  <div class="input-row">
-    <input
-      id="urlInput"
-      type="url"
-      inputmode="url"
-      autocomplete="off"
-      autocapitalize="off"
-      spellcheck="false"
-      placeholder="貼上 X 或 Twitter 連結..."
-    >
-    <button class="paste" id="pasteBtn">貼上</button>
-    <button class="clear" id="clearBtn">清除</button>
-  </div>
+  <main class="wrapper">
 
-  <button class="primary" id="fetchBtn">
-    獲取影片
-  </button>
+    <section class="card">
 
-  <div id="message" class="message" role="status"></div>
+      <h1>X 影片下載器</h1>
 
-  <section id="results" class="results">
-    <div id="meta" class="meta"></div>
-    <div id="mediaList" class="media-list"></div>
-    <div class="note">
-      僅支援公開 X 帖子。請只下載你有權保存或使用的內容。
-    </div>
-  </section>
-</main>
+      <div class="input-row">
 
-<script>
-"use strict";
+        <input
+          id="urlInput"
+          type="url"
+          inputmode="url"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="貼上 X 或 Twitter 連結..."
+        >
 
-const input = document.getElementById("urlInput");
-const pasteBtn = document.getElementById("pasteBtn");
-const clearBtn = document.getElementById("clearBtn");
-const fetchBtn = document.getElementById("fetchBtn");
-const message = document.getElementById("message");
-const results = document.getElementById("results");
-const meta = document.getElementById("meta");
-const mediaList = document.getElementById("mediaList");
+        <button
+          id="pasteButton"
+          class="paste-button"
+          type="button"
+        >
+          貼上
+        </button>
 
-const X_HOSTS = new Set([
-  "x.com",
-  "www.x.com",
-  "twitter.com",
-  "www.twitter.com",
-  "mobile.twitter.com",
-  "m.twitter.com"
-]);
+        <button
+          id="clearButton"
+          class="clear-button"
+          type="button"
+        >
+          清除
+        </button>
 
-function hideKeyboard() {
-  input.blur();
-}
+      </div>
 
-function showMessage(text, type = "info") {
-  message.textContent = text;
-  message.className = "message " + type;
-}
+      <button
+        id="fetchButton"
+        class="fetch-button"
+        type="button"
+      >
+        獲取影片
+      </button>
 
-function clearMessage() {
-  message.textContent = "";
-  message.className = "message";
-}
+      <div
+        id="message"
+        class="message"
+        role="status"
+      ></div>
 
-function clearResults() {
-  results.classList.remove("show");
-  meta.textContent = "";
-  mediaList.replaceChildren();
-}
+      <section
+        id="results"
+        class="results"
+      >
 
-function parsePost(raw) {
-  let url;
+        <div
+          id="postMeta"
+          class="post-meta"
+        ></div>
 
-  try {
-    const text = raw.trim();
-    url = new URL(
-      /^https?:\/\//i.test(text)
-        ? text
-        : "https://" + text
-    );
-  } catch {
-    throw new Error("請貼上有效的 X 帖子連結");
-  }
+        <div
+          id="mediaList"
+          class="media-list"
+        ></div>
 
-  if (
-    !["https:", "http:"].includes(url.protocol) ||
-    !X_HOSTS.has(url.hostname.toLowerCase())
-  ) {
-    throw new Error("只支援 X / Twitter 帖子連結");
-  }
+        <div class="note">
+          僅支援公開 X / Twitter 帖子。請只下載你有權保存或使用的內容。
+        </div>
 
-  const match = url.pathname.match(
-    /\/(?:status|statuses)\/(\d+)(?:\/|$)/
-  );
+      </section>
 
-  if (!match) {
-    throw new Error("找不到帖子 ID，請使用完整連結");
-  }
+    </section>
 
-  return {
-    id: match[1],
-    url: url.toString()
-  };
-}
+  </main>
 
-function number(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
 
-function dimensions(variant) {
-  let width = number(variant.width);
-  let height = number(variant.height);
-
-  if (!width || !height) {
-    const match = String(variant.url || "").match(
-      /\/(\d{2,5})x(\d{2,5})(?:\/|$)/
-    );
-
-    if (match) {
-      width = Number(match[1]);
-      height = Number(match[2]);
-    }
-  }
-
-  return { width, height };
-}
-
-function isAllowedMedia(raw, hostname) {
-  try {
-    const u = new URL(raw);
-    return u.protocol === "https:" &&
-      u.hostname === hostname;
-  } catch {
-    return false;
-  }
-}
-
-function getBestVideo(item) {
-  const formats = Array.isArray(item.formats)
-    ? item.formats
-    : [];
-
-  const mp4s = formats.filter(f => {
-    if (!f?.url ||
-        !isAllowedMedia(f.url, "video.twimg.com")) {
-      return false;
-    }
-
-    const container = String(
-      f.container || ""
-    ).toLowerCase();
-
-    return container === "mp4" ||
-      container === "video/mp4" ||
-      (!container && /\.mp4(?:\?|$)/i.test(f.url));
-  });
-
-  if (
-    mp4s.length === 0 &&
-    isAllowedMedia(item.url, "video.twimg.com") &&
-    /\.mp4(?:\?|$)/i.test(item.url)
-  ) {
-    mp4s.push(item);
-  }
-
-  mp4s.sort((a, b) => {
-    const da = dimensions(a);
-    const db = dimensions(b);
-
-    return (
-      db.width * db.height -
-      da.width * da.height
-    ) || (
-      number(b.bitrate) - number(a.bitrate)
-    ) || (
-      number(b.size) - number(a.size)
-    );
-  });
-
-  return mp4s[0] || null;
-}
-
-function getOriginalPhoto(raw) {
-  try {
-    const u = new URL(raw);
-
-    if (
-      u.protocol !== "https:" ||
-      u.hostname !== "pbs.twimg.com"
-    ) {
-      return null;
-    }
-
-    u.searchParams.set("name", "orig");
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
-function photoExtension(raw, fallback) {
-  const allowed = ["jpg", "jpeg", "png", "webp"];
-  let format = String(fallback || "").toLowerCase();
-
-  try {
-    const u = new URL(raw);
-    const queryFormat = (
-      u.searchParams.get("format") || ""
-    ).toLowerCase();
-
-    if (allowed.includes(queryFormat)) {
-      format = queryFormat;
-    } else if (!allowed.includes(format)) {
-      const match = u.pathname.match(
-        /\.(jpg|jpeg|png|webp)$/i
+  <script>
+    const urlInput =
+      document.getElementById(
+        "urlInput"
       );
-      format = match ? match[1].toLowerCase() : "jpg";
-    }
-  } catch {
-    format = "jpg";
-  }
 
-  return format === "jpeg" ? "jpg" : format;
-}
+    const pasteButton =
+      document.getElementById(
+        "pasteButton"
+      );
 
-function extractMedia(status) {
-  const media = status.media || {};
+    const clearButton =
+      document.getElementById(
+        "clearButton"
+      );
 
-  const all = Array.isArray(media.all) &&
-    media.all.length > 0
-      ? media.all
-      : [
-          ...(Array.isArray(media.photos)
-            ? media.photos : []),
-          ...(Array.isArray(media.videos)
-            ? media.videos : [])
-        ];
+    const fetchButton =
+      document.getElementById(
+        "fetchButton"
+      );
 
-  const output = [];
-  const seen = new Set();
-  let photoCount = 0;
-  let videoCount = 0;
+    const message =
+      document.getElementById(
+        "message"
+      );
 
-  for (const item of all) {
-    if (!item || typeof item !== "object") continue;
+    const results =
+      document.getElementById(
+        "results"
+      );
 
-    const type = String(item.type || "").toLowerCase();
+    const postMeta =
+      document.getElementById(
+        "postMeta"
+      );
 
-    if (type === "photo") {
-      const url = getOriginalPhoto(item.url);
+    const mediaList =
+      document.getElementById(
+        "mediaList"
+      );
 
-      if (!url || seen.has(url)) continue;
-      seen.add(url);
 
-      photoCount++;
-
-      output.push({
-        type: "photo",
-        label: "相片 " + photoCount,
-        url,
-        preview: item.url || url,
-        width: number(item.width),
-        height: number(item.height),
-        format: photoExtension(url, item.format)
-      });
-
-    } else if (
-      type === "video" ||
-      type === "gif" ||
-      type === "animated_gif"
+    function showMessage(
+      text,
+      type = "info"
     ) {
-      const best = getBestVideo(item);
-
-      if (!best || seen.has(best.url)) continue;
-      seen.add(best.url);
-
-      videoCount++;
-
-      const d = dimensions(best);
-
-      output.push({
-        type: type === "video" ? "video" : "gif",
-        label:
-          (type === "video" ? "影片 " : "GIF ") +
-          videoCount,
-        url: best.url,
-        preview: item.thumbnail_url || "",
-        width: d.width || number(item.width),
-        height: d.height || number(item.height),
-        bitrate: number(best.bitrate),
-        format: "mp4"
-      });
-
-    } else if (type === "mosaic_photo") {
-      const mosaic =
-        item.formats?.jpeg ||
-        item.formats?.webp;
-
-      const url = getOriginalPhoto(mosaic);
-
-      if (!url || seen.has(url)) continue;
-      seen.add(url);
-
-      photoCount++;
-
-      output.push({
-        type: "photo",
-        label: "相片 " + photoCount,
-        url,
-        preview: mosaic,
-        width: number(item.width),
-        height: number(item.height),
-        format: photoExtension(url)
-      });
-    }
-  }
-
-  return output;
-}
-
-async function fetchWithTimeout(url, options, ms) {
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(), ms
-  );
-
-  try {
-    return await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/*
- * 優先：Safari 直接連接 FxTwitter。
- * 不經 Cloudflare Worker 出口 IP。
- *
- * 不加自訂 request headers，
- * 避免額外 CORS preflight。
- */
-async function directParse(post) {
-  const endpoint =
-    "https://api.fxtwitter.com/2/status/" +
-    encodeURIComponent(post.id);
-
-  const response = await fetchWithTimeout(
-    endpoint,
-    {
-      method: "GET",
-      mode: "cors",
-      credentials: "omit",
-      cache: "no-store"
-    },
-    12000
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "FxTwitter HTTP " + response.status
-    );
-  }
-
-  const data = await response.json();
-
-  if (
-    Number(data.code) !== 200 ||
-    !data.status ||
-    data.status.type === "tombstone"
-  ) {
-    throw new Error(
-      data.message || "帖子無法公開讀取"
-    );
-  }
-
-  const media = extractMedia(data.status);
-
-  if (!media.length) {
-    throw new Error(
-      "沒有找到可下載的 MP4 或圖片"
-    );
-  }
-
-  return {
-    ok: true,
-    source: "Safari 直接解析",
-    post: {
-      author: {
-        username:
-          data.status.author?.screen_name ||
-          data.status.author?.username ||
-          "",
-        name: data.status.author?.name || ""
-      }
-    },
-    media
-  };
-}
-
-/*
- * Safari 直接連線失敗時，
- * 自動使用原有 Cloudflare /api 備援。
- */
-async function workerParse(post) {
-  const endpoint =
-    "/api?url=" + encodeURIComponent(post.url);
-
-  const response = await fetchWithTimeout(
-    endpoint,
-    {
-      method: "GET",
-      cache: "no-store",
-      headers: {
-        Accept: "application/json"
-      }
-    },
-    28000
-  );
-
-  const data = await response.json();
-
-  if (!response.ok || !data.ok) {
-    throw new Error(
-      data.error ||
-      "Cloudflare 解析失敗：" + response.status
-    );
-  }
-
-  if (!Array.isArray(data.media) || !data.media.length) {
-    throw new Error("找不到可下載媒體");
-  }
-
-  return data;
-}
-
-function makeDownloadUrl(item, index) {
-  const u = new URL(item.url);
-
-  if (
-    u.protocol !== "https:" ||
-    !["video.twimg.com", "pbs.twimg.com"].includes(
-      u.hostname
-    )
-  ) {
-    return null;
-  }
-
-  const isPhoto = item.type === "photo";
-
-  const ext = isPhoto
-    ? photoExtension(item.url, item.format)
-    : "mp4";
-
-  const filename = isPhoto
-    ? `X-photo-${index + 1}.${ext}`
-    : `X-video-${index + 1}.mp4`;
-
-  const params = new URLSearchParams({
-    url: item.url,
-    filename
-  });
-
-  return "/download?" + params.toString();
-}
-
-function mediaDetail(item) {
-  const resolution =
-    item.width && item.height
-      ? `${item.width} × ${item.height}`
-      : "最高可用版本";
-
-  if (item.type === "photo") {
-    return resolution + " · " +
-      String(item.format || "JPG").toUpperCase();
-  }
-
-  const bitrate = number(item.bitrate);
-
-  return resolution +
-    (bitrate
-      ? " · " + (bitrate / 1000000).toFixed(2) +
-        " Mbps"
-      : "") +
-    " · MP4";
-}
-
-function renderResults(data) {
-  clearResults();
-
-  const author = data.post?.author || {};
-  const username = author.username
-    ? "@" + author.username
-    : author.name || "X 帖子";
-
-  meta.textContent =
-    username + " · 找到 " +
-    data.media.length + " 個可下載媒體";
-
-  data.media.forEach((item, index) => {
-    const downloadUrl = makeDownloadUrl(item, index);
-
-    if (!downloadUrl) return;
-
-    const card = document.createElement("article");
-    card.className = "media-item";
-
-    const thumb = document.createElement("img");
-    thumb.className = "thumbnail";
-    thumb.loading = "lazy";
-    thumb.alt = item.label || "媒體預覽";
-
-    const preview = item.preview ||
-      (item.type === "photo" ? item.url : "");
-
-    if (preview) thumb.src = preview;
-
-    thumb.onerror = () => {
-      thumb.style.opacity = ".15";
-    };
-
-    const info = document.createElement("div");
-
-    const title = document.createElement("div");
-    title.className = "media-name";
-    title.textContent = item.label || "媒體 " + (index + 1);
-
-    const detail = document.createElement("div");
-    detail.className = "media-detail";
-    detail.textContent = mediaDetail(item);
-
-    info.append(title, detail);
-
-    const link = document.createElement("a");
-    link.className = "download-button";
-    link.href = downloadUrl;
-    link.textContent = item.type === "photo"
-      ? "下載原圖"
-      : "下載影片";
-
-    link.setAttribute("download", "");
-    link.setAttribute("rel", "nofollow");
-
-    card.append(thumb, info, link);
-    mediaList.appendChild(card);
-  });
-
-  if (!mediaList.children.length) {
-    throw new Error("沒有找到有效的媒體下載網址");
-  }
-
-  results.classList.add("show");
-}
-
-async function getMedia() {
-  hideKeyboard();
-
-  const raw = input.value.trim();
-
-  if (!raw) {
-    showMessage("請先貼上 X 帖子連結", "error");
-    return;
-  }
-
-  clearMessage();
-  clearResults();
-
-  let post;
-
-  try {
-    post = parsePost(raw);
-  } catch (error) {
-    showMessage(error.message, "error");
-    return;
-  }
-
-  fetchBtn.disabled = true;
-  fetchBtn.textContent = "正在解析...";
-
-  try {
-    let data;
-    let directError = null;
-
-    try {
-      data = await directParse(post);
-    } catch (error) {
-      directError = error;
+      message.textContent =
+        text;
+
+      message.className =
+        `message ${type}`;
     }
 
-    if (!data) {
-      fetchBtn.textContent = "正在嘗試備援解析...";
 
+    function hideMessage() {
+      message.textContent =
+        "";
+
+      message.className =
+        "message";
+    }
+
+
+    function resetResults() {
+      results.classList.remove(
+        "show"
+      );
+
+      postMeta.textContent =
+        "";
+
+      mediaList.innerHTML =
+        "";
+    }
+
+
+    /*
+     * 所有下載現在都走：
+     *
+     * /api/download
+     *
+     * 而不是舊的：
+     *
+     * /download/video/...
+     * /download/photo/...
+     *
+     * api/download.mjs 會負責真正串流，
+     * 並處理 Safari Range request。
+     */
+    function makeDownloadUrl(
+      rawUrl,
+      item,
+      index
+    ) {
       try {
-        data = await workerParse(post);
-      } catch (workerError) {
-        console.error("Safari:", directError);
-        console.error("Worker:", workerError);
+        const mediaUrl =
+          new URL(rawUrl);
 
-        throw new Error(
-          "解析失敗。Safari 直接解析：" +
-          (directError?.message || "連線失敗") +
-          "；Cloudflare 備援：" +
-          workerError.message
+        const allowedHost =
+          mediaUrl.hostname ===
+            "video.twimg.com" ||
+          mediaUrl.hostname ===
+            "pbs.twimg.com";
+
+        if (!allowedHost) {
+          return rawUrl;
+        }
+
+        let extension;
+
+        if (
+          item.type === "photo"
+        ) {
+          extension =
+            (
+              item.format ||
+              "jpg"
+            )
+            .toLowerCase()
+            .replace(
+              "jpeg",
+              "jpg"
+            );
+        } else {
+          extension =
+            "mp4";
+        }
+
+        const typeName =
+          item.type === "photo"
+            ? "photo"
+            : "video";
+
+        const filename =
+          `X-${typeName}-${index + 1}.${extension}`;
+
+        return (
+          "/api/download" +
+          "?url=" +
+          encodeURIComponent(
+            rawUrl
+          ) +
+          "&filename=" +
+          encodeURIComponent(
+            filename
+          )
+        );
+
+      } catch (error) {
+        console.error(
+          error
+        );
+
+        return rawUrl;
+      }
+    }
+
+
+    function getMediaDetail(
+      item
+    ) {
+      let resolution =
+        "最高可用畫質";
+
+      if (
+        item.width &&
+        item.height
+      ) {
+        resolution =
+          `${item.width} × ${item.height}`;
+      }
+
+      if (
+        item.type === "video" ||
+        item.type === "gif"
+      ) {
+        if (item.bitrate) {
+          return (
+            `${resolution} · ` +
+            `${(
+              item.bitrate /
+              1000000
+            ).toFixed(1)} Mbps · MP4`
+          );
+        }
+
+        return (
+          `${resolution} · MP4`
         );
       }
+
+      const format =
+        (
+          item.format ||
+          "JPG"
+        ).toUpperCase();
+
+      return (
+        `${resolution} · ${format}`
+      );
     }
 
-    renderResults(data);
 
-    showMessage(
-      "成功找到 " + data.media.length +
-      " 個媒體，已選擇最高可用 MP4 畫質。" +
-      "（" + (data.source || "解析成功") + "）",
-      "info"
-    );
+    function renderResults(
+      data
+    ) {
+      resetResults();
 
-  } catch (error) {
-    showMessage(
-      error.message || "解析失敗，請稍後再試",
-      "error"
-    );
+      const author =
+        data.post?.author || {};
 
-  } finally {
-    fetchBtn.disabled = false;
-    fetchBtn.textContent = "獲取影片";
-  }
-}
+      let authorText =
+        "X 帖子";
 
-pasteBtn.addEventListener("click", async () => {
-  hideKeyboard();
-  clearMessage();
+      if (author.username) {
+        authorText =
+          `@${author.username}`;
+      } else if (author.name) {
+        authorText =
+          author.name;
+      }
 
-  try {
-    const text = await navigator.clipboard.readText();
+      postMeta.textContent =
+        `${authorText} · 找到 ${data.media.length} 個可下載媒體`;
 
-    if (text?.trim()) {
-      input.value = text.trim();
-      hideKeyboard();
-      clearResults();
-    } else {
-      showMessage("剪貼簿沒有文字");
+      data.media.forEach(
+        (item, index) => {
+
+          const row =
+            document.createElement(
+              "article"
+            );
+
+          row.className =
+            "media-item";
+
+
+          const thumbnail =
+            document.createElement(
+              "img"
+            );
+
+          thumbnail.className =
+            "thumbnail";
+
+          thumbnail.loading =
+            "lazy";
+
+          thumbnail.alt =
+            item.label ||
+            `媒體 ${index + 1}`;
+
+          if (item.preview) {
+            thumbnail.src =
+              item.preview;
+          } else if (
+            item.type === "photo"
+          ) {
+            thumbnail.src =
+              item.url;
+          }
+
+          thumbnail.onerror =
+            function () {
+              this.style.opacity =
+                "0.15";
+            };
+
+
+          const info =
+            document.createElement(
+              "div"
+            );
+
+
+          const name =
+            document.createElement(
+              "div"
+            );
+
+          name.className =
+            "media-name";
+
+          name.textContent =
+            item.label ||
+            `媒體 ${index + 1}`;
+
+
+          const detail =
+            document.createElement(
+              "div"
+            );
+
+          detail.className =
+            "media-detail";
+
+          detail.textContent =
+            getMediaDetail(
+              item
+            );
+
+
+          info.append(
+            name,
+            detail
+          );
+
+
+          const download =
+            document.createElement(
+              "a"
+            );
+
+          download.className =
+            "download-button";
+
+          download.href =
+            makeDownloadUrl(
+              item.url,
+              item,
+              index
+            );
+
+          /*
+           * Safari 最終是否顯示內建下載提示，
+           * 主要由後端 Content-Disposition
+           * 控制。
+           */
+          download.setAttribute(
+            "download",
+            ""
+          );
+
+          download.setAttribute(
+            "rel",
+            "nofollow"
+          );
+
+          if (
+            item.type === "photo"
+          ) {
+            download.textContent =
+              "下載原圖";
+          } else {
+            download.textContent =
+              "下載影片";
+          }
+
+
+          row.append(
+            thumbnail,
+            info,
+            download
+          );
+
+          mediaList.appendChild(
+            row
+          );
+        }
+      );
+
+      results.classList.add(
+        "show"
+      );
     }
-  } catch {
-    hideKeyboard();
-    showMessage(
-      "Safari 沒有允許讀取剪貼簿，請長按輸入框手動貼上"
+
+
+    async function getMedia() {
+      const url =
+        urlInput.value.trim();
+
+      if (!url) {
+        showMessage(
+          "請先貼上 X / Twitter 帖子連結。",
+          "error"
+        );
+
+        urlInput.focus();
+
+        return;
+      }
+
+      hideMessage();
+      resetResults();
+
+      fetchButton.disabled =
+        true;
+
+      fetchButton.textContent =
+        "正在獲取...";
+
+      try {
+        const response =
+          await fetch(
+            "/api?url=" +
+            encodeURIComponent(
+              url
+            ),
+            {
+              method: "GET",
+
+              headers: {
+                "Accept":
+                  "application/json"
+              },
+
+              cache:
+                "no-store"
+            }
+          );
+
+        const data =
+          await response
+            .json()
+            .catch(
+              () => ({})
+            );
+
+        if (
+          !response.ok ||
+          !data.ok
+        ) {
+          throw new Error(
+            data.error ||
+            `獲取失敗（HTTP ${response.status}）`
+          );
+        }
+
+        if (
+          !Array.isArray(
+            data.media
+          ) ||
+          data.media.length === 0
+        ) {
+          throw new Error(
+            "這則帖子沒有找到可下載的圖片或影片。"
+          );
+        }
+
+        renderResults(
+          data
+        );
+
+        showMessage(
+          `成功找到 ${data.media.length} 個媒體，已自動選擇最高可用畫質。`,
+          "info"
+        );
+
+      } catch (error) {
+        console.error(
+          error
+        );
+
+        showMessage(
+          error?.message ||
+          "獲取失敗，請稍後再試。",
+          "error"
+        );
+
+      } finally {
+        fetchButton.disabled =
+          false;
+
+        fetchButton.textContent =
+          "獲取影片";
+      }
+    }
+
+
+    pasteButton.addEventListener(
+      "click",
+      async () => {
+
+        hideMessage();
+
+        try {
+          const clipboardText =
+            await navigator.clipboard
+              .readText();
+
+          if (
+            clipboardText &&
+            clipboardText.trim()
+          ) {
+            urlInput.value =
+              clipboardText.trim();
+
+            urlInput.focus();
+
+          } else {
+            showMessage(
+              "剪貼簿目前沒有文字。",
+              "info"
+            );
+          }
+
+        } catch (error) {
+          urlInput.focus();
+
+          showMessage(
+            "Safari 沒有允許直接讀取剪貼簿，請長按輸入框後選擇「貼上」。",
+            "info"
+          );
+        }
+      }
     );
-  }
-});
 
-clearBtn.addEventListener("click", () => {
-  input.value = "";
-  hideKeyboard();
-  clearMessage();
-  clearResults();
-});
 
-fetchBtn.addEventListener("click", getMedia);
+    clearButton.addEventListener(
+      "click",
+      () => {
 
-input.addEventListener("keydown", event => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    hideKeyboard();
-    getMedia();
-  }
-});
-</script>
+        urlInput.value =
+          "";
+
+        hideMessage();
+
+        resetResults();
+
+        urlInput.focus();
+      }
+    );
+
+
+    fetchButton.addEventListener(
+      "click",
+      getMedia
+    );
+
+
+    urlInput.addEventListener(
+      "keydown",
+      event => {
+
+        if (
+          event.key === "Enter"
+        ) {
+          getMedia();
+        }
+      }
+    );
+
+  </script>
+
 </body>
 </html>
