@@ -1,440 +1,267 @@
-const ALLOWED_X_HOSTS = new Set([
-  "x.com",
-  "www.x.com",
-  "twitter.com",
-  "www.twitter.com",
-  "mobile.twitter.com",
-  "m.twitter.com"
+
+const X_HOSTS = new Set([
+  'x.com', 'www.x.com',
+  'twitter.com', 'www.twitter.com',
+  'mobile.twitter.com', 'm.twitter.com'
 ]);
 
-const ALLOWED_MEDIA_HOSTS = new Set([
-  "video.twimg.com",
-  "pbs.twimg.com"
+const MEDIA_HOSTS = new Set([
+  'video.twimg.com',
+  'pbs.twimg.com'
 ]);
 
-const STATUS_RE =
-  /\/(?:status|statuses)\/(\d+)(?:\/|$)/;
+const wait = ms =>
+  new Promise(resolve => setTimeout(resolve, ms));
 
-const sleep = ms =>
-  new Promise(resolve =>
-    setTimeout(resolve, ms)
-  );
-
-
-function jsonResponse(
-  data,
-  status = 200
-) {
-  return new Response(
-    JSON.stringify(data),
-    {
-      status,
-      headers: {
-        "Content-Type":
-          "application/json; charset=utf-8",
-
-        "Cache-Control":
-          "no-store",
-
-        "X-Content-Type-Options":
-          "nosniff"
-      }
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff'
     }
-  );
+  });
 }
 
+function parsePostLink(raw) {
+  const text = String(raw || '').trim();
 
-function normalizeXUrl(raw) {
-  raw = String(
-    raw || ""
-  ).trim();
-
-  if (!raw) {
-    throw new Error(
-      "請貼上 X / Twitter 帖子連結"
-    );
+  if (!text || text.length > 2048) {
+    throw new Error('請貼上完整的 X 帖子連結');
   }
 
-  if (
-    !/^https?:\/\//i.test(raw)
-  ) {
-    raw =
-      "https://" + raw;
-  }
-
-  let parsed;
+  let url;
 
   try {
-    parsed =
-      new URL(raw);
-  } catch {
-    throw new Error(
-      "X / Twitter 連結格式不正確"
+    url = new URL(
+      /^https?:\/\//i.test(text)
+        ? text
+        : `https://${text}`
     );
+  } catch {
+    throw new Error('連結格式不正確');
   }
 
   if (
-    !ALLOWED_X_HOSTS.has(
-      parsed.hostname.toLowerCase()
-    )
+    !['https:', 'http:'].includes(url.protocol) ||
+    !X_HOSTS.has(url.hostname.toLowerCase())
   ) {
     throw new Error(
-      "目前只支援 x.com / twitter.com 帖子"
+      '只支援 x.com 或 twitter.com 帖子連結'
     );
   }
 
-  const match =
-    parsed.pathname.match(
-      STATUS_RE
-    );
+  const m = url.pathname.match(
+    /^\/([^/]+)\/(?:status|statuses)\/(\d+)(?:\/|$)/
+  );
 
-  if (!match) {
+  if (!m) {
     throw new Error(
-      "找不到帖子 ID，請貼上完整的帖子連結"
+      '找不到帖子 ID，請複製完整帖子連結'
     );
   }
 
   return {
-    raw,
-    id: match[1]
+    handle: m[1],
+    id: m[2],
+    url: url.toString()
   };
 }
 
+function number(value) {
+  const n = Number(value);
 
-function numberValue(value) {
-  const n =
-    Number(value);
-
-  return Number.isFinite(n)
+  return Number.isFinite(n) && n > 0
     ? n
     : 0;
 }
 
-
-function originalPhotoUrl(
-  rawUrl
-) {
+function mediaUrl(raw, host) {
   try {
-    const url =
-      new URL(rawUrl);
+    const u = new URL(raw);
 
-    if (
-      url.hostname ===
-      "pbs.twimg.com"
-    ) {
-      url.searchParams.set(
-        "name",
-        "orig"
-      );
-    }
-
-    return url.toString();
-
+    return (
+      u.protocol === 'https:' &&
+      u.hostname === host
+    ) ? u : null;
   } catch {
-    return rawUrl;
+    return null;
   }
 }
 
+function originalPhoto(raw) {
+  const u = mediaUrl(raw, 'pbs.twimg.com');
 
-function bestVideoFormat(
-  item
-) {
-  const formats =
-    Array.isArray(
-      item?.formats
-    )
-      ? item.formats
-      : [];
+  if (!u) return null;
 
-  const candidates =
-    formats.filter(fmt => {
-      if (!fmt?.url) {
-        return false;
-      }
+  u.searchParams.set('name', 'orig');
 
-      const container =
-        String(
-          fmt.container || ""
-        ).toLowerCase();
+  return u.toString();
+}
 
-      /*
-       * m3u8 是串流播放清單，
-       * 不拿它做直接 MP4 下載。
-       */
-      return (
-        !container ||
-        container === "mp4" ||
-        container === "video/mp4"
-      );
-    });
+function photoFormat(raw, proposed) {
+  const fmt = String(proposed || '').toLowerCase();
 
-  candidates.sort(
-    (a, b) => {
-      const areaA =
-        numberValue(a.width) *
-        numberValue(a.height);
-
-      const areaB =
-        numberValue(b.width) *
-        numberValue(b.height);
-
-      if (
-        areaB !== areaA
-      ) {
-        return (
-          areaB - areaA
-        );
-      }
-
-      const bitrateDiff =
-        numberValue(
-          b.bitrate
-        ) -
-        numberValue(
-          a.bitrate
-        );
-
-      if (
-        bitrateDiff !== 0
-      ) {
-        return bitrateDiff;
-      }
-
-      return (
-        numberValue(b.size) -
-        numberValue(a.size)
-      );
-    }
-  );
-
-  if (
-    candidates.length > 0
-  ) {
-    return candidates[0];
+  if (['jpg', 'jpeg', 'png', 'webp'].includes(fmt)) {
+    return fmt === 'jpeg' ? 'jpg' : fmt;
   }
 
-  if (item?.url) {
-    return {
-      url:
-        item.url,
+  try {
+    const u = new URL(raw);
 
-      width:
-        item.width,
+    const queryFmt = (
+      u.searchParams.get('format') || ''
+    ).toLowerCase();
 
-      height:
-        item.height,
+    if (
+      ['jpg', 'jpeg', 'png', 'webp'].includes(queryFmt)
+    ) {
+      return queryFmt === 'jpeg'
+        ? 'jpg'
+        : queryFmt;
+    }
 
-      bitrate:
-        item.bitrate,
+    const pathFmt = u.pathname.match(
+      /\.(jpg|jpeg|png|webp)$/i
+    )?.[1]?.toLowerCase();
 
-      container:
-        "mp4"
-    };
+    return pathFmt === 'jpeg'
+      ? 'jpg'
+      : (pathFmt || 'jpg');
+  } catch {
+    return 'jpg';
+  }
+}
+
+function bestMP4(item) {
+  const formats = Array.isArray(item.formats)
+    ? item.formats
+    : [];
+
+  const options = formats.filter(f => {
+    if (
+      !f?.url ||
+      !mediaUrl(f.url, 'video.twimg.com')
+    ) {
+      return false;
+    }
+
+    const container = String(
+      f.container || ''
+    ).toLowerCase();
+
+    return (
+      container === 'mp4' ||
+      container === 'video/mp4' ||
+      (
+        !container &&
+        /\.mp4(?:\?|$)/i.test(f.url)
+      )
+    );
+  });
+
+  options.sort((a, b) =>
+    number(b.width) * number(b.height) -
+    number(a.width) * number(a.height) ||
+    number(b.bitrate) - number(a.bitrate) ||
+    number(b.size) - number(a.size)
+  );
+
+  if (options.length) {
+    return options[0];
+  }
+
+  if (
+    item.url &&
+    mediaUrl(item.url, 'video.twimg.com') &&
+    /\.mp4(?:\?|$)/i.test(item.url)
+  ) {
+    return item;
   }
 
   return null;
 }
 
+function fromFx(status) {
+  const media = status?.media || {};
 
-function extractMedia(
-  status
-) {
-  const media =
-    status?.media || {};
-
-  let all =
-    Array.isArray(media.all)
+  const all =
+    Array.isArray(media.all) && media.all.length
       ? media.all
-      : [];
-
-  if (!all.length) {
-    all = [
-      ...(
-        Array.isArray(
-          media.photos
-        )
-          ? media.photos
-          : []
-      ),
-
-      ...(
-        Array.isArray(
-          media.videos
-        )
-          ? media.videos
-          : []
-      )
-    ];
-  }
+      : [
+          ...(Array.isArray(media.photos)
+            ? media.photos : []),
+          ...(Array.isArray(media.videos)
+            ? media.videos : [])
+        ];
 
   const output = [];
+  let p = 0;
+  let v = 0;
 
-  let photoIndex = 0;
-  let videoIndex = 0;
-
-  for (
-    const item of all
-  ) {
-    if (
-      !item ||
-      typeof item !==
-        "object"
-    ) {
+  for (const item of all) {
+    if (!item || typeof item !== 'object') {
       continue;
     }
 
-    const type =
-      String(
-        item.type || ""
-      ).toLowerCase();
+    const type = String(
+      item.type || ''
+    ).toLowerCase();
 
+    if (type === 'photo' || type === 'image') {
+      const url = originalPhoto(item.url);
 
-    if (
-      type === "photo"
-    ) {
-      const url =
-        originalPhotoUrl(
-          item.url
-        );
-
-      if (!url) {
-        continue;
-      }
-
-      photoIndex += 1;
+      if (!url) continue;
 
       output.push({
-        type:
-          "photo",
-
-        label:
-          `相片 ${photoIndex}`,
-
+        type: 'photo',
+        label: `相片 ${++p}`,
         url,
-
-        preview:
-          item.url || url,
-
-        width:
-          item.width || null,
-
-        height:
-          item.height || null,
-
-        format:
-          (
-            item.format ||
-            new URL(url)
-              .searchParams
-              .get("format") ||
-            "jpg"
-          )
-          .toLowerCase()
-          .replace(
-            "jpeg",
-            "jpg"
-          )
+        preview: item.url || url,
+        width: item.width || null,
+        height: item.height || null,
+        format: photoFormat(url, item.format)
       });
 
-      continue;
-    }
-
-
-    if (
-      type === "video" ||
-      type === "gif"
+    } else if (
+      type === 'video' ||
+      type === 'gif' ||
+      type === 'animated_gif'
     ) {
-      const best =
-        bestVideoFormat(
-          item
-        );
+      const best = bestMP4(item);
 
-      if (!best?.url) {
+      if (!best) continue;
+
+      output.push({
+        type: type === 'video' ? 'video' : 'gif',
+        label:
+          `${type === 'video' ? '影片' : 'GIF'} ${++v}`,
+        url: best.url,
+        preview: item.thumbnail_url || '',
+        width: best.width || item.width || null,
+        height: best.height || item.height || null,
+        bitrate: best.bitrate || null,
+        format: 'mp4'
+      });
+
+    } else if (type === 'mosaic_photo') {
+      const u =
+        item.formats?.jpeg ||
+        item.formats?.webp;
+
+      if (!u || !mediaUrl(u, 'pbs.twimg.com')) {
         continue;
       }
 
-      videoIndex += 1;
-
       output.push({
-        type:
-          type === "gif"
-            ? "gif"
-            : "video",
-
-        label:
-          type === "gif"
-            ? `GIF ${videoIndex}`
-            : `影片 ${videoIndex}`,
-
-        url:
-          best.url,
-
-        preview:
-          item.thumbnail_url ||
-          "",
-
-        width:
-          best.width ||
-          item.width ||
-          null,
-
-        height:
-          best.height ||
-          item.height ||
-          null,
-
-        bitrate:
-          best.bitrate ||
-          null,
-
-        format:
-          "mp4"
-      });
-
-      continue;
-    }
-
-
-    if (
-      type ===
-      "mosaic_photo"
-    ) {
-      const formats =
-        item.formats || {};
-
-      const imageUrl =
-        formats.jpeg ||
-        formats.webp;
-
-      if (!imageUrl) {
-        continue;
-      }
-
-      photoIndex += 1;
-
-      output.push({
-        type:
-          "photo",
-
-        label:
-          `相片 ${photoIndex}`,
-
-        url:
-          imageUrl,
-
-        preview:
-          imageUrl,
-
-        width:
-          item.width || null,
-
-        height:
-          item.height || null,
-
-        format:
-          formats.jpeg
-            ? "jpg"
-            : "webp"
+        type: 'photo',
+        label: `相片 ${++p}`,
+        url: originalPhoto(u),
+        preview: u,
+        width: item.width || null,
+        height: item.height || null,
+        format: photoFormat(u)
       });
     }
   }
@@ -442,563 +269,425 @@ function extractMedia(
   return output;
 }
 
+function fromVx(data) {
+  const output = [];
+  let p = 0;
+  let v = 0;
 
-async function fetchFxStatus(
-  statusId
-) {
-  const apiUrl =
-    "https://api.fxtwitter.com/" +
-    "2/status/" +
-    encodeURIComponent(
-      statusId
-    );
-
-  /*
-   * 上游偶發 404 / 5xx 時，
-   * Worker 自己重試，
-   * 不再需要使用者一直按按鈕。
-   */
-  const delays = [
-    0,
-    300,
-    800,
-    1500
-  ];
-
-  let lastStatus = 0;
-
-  for (
-    let i = 0;
-    i < delays.length;
-    i++
-  ) {
-    if (delays[i]) {
-      await sleep(
-        delays[i]
-      );
-    }
-
-    try {
-      const response =
-        await fetch(
-          apiUrl,
-          {
-            headers: {
-              "Accept":
-                "application/json",
-
-              "User-Agent":
-                "X-Media-Downloader/3.0",
-
-              "Cache-Control":
-                "no-cache"
-            },
-
-            cf: {
-              cacheTtl: 0
-            }
-          }
+  const entries =
+    Array.isArray(data.media_extended) &&
+    data.media_extended.length
+      ? data.media_extended
+      : (
+          Array.isArray(data.mediaURLs)
+            ? data.mediaURLs.map(url => ({ url }))
+            : []
         );
 
-      lastStatus =
-        response.status;
+  for (const item of entries) {
+    if (!item?.url) continue;
 
-      let payload = null;
+    let host = '';
 
-      try {
-        payload =
-          await response.json();
-      } catch {
-        payload = null;
-      }
+    try {
+      host = new URL(item.url).hostname;
+    } catch {
+      continue;
+    }
 
-      if (
-        response.ok &&
-        payload?.status &&
-        payload.status.type !==
-          "tombstone"
-      ) {
-        return payload.status;
-      }
+    if (host === 'pbs.twimg.com') {
+      const url = originalPhoto(item.url);
 
-      /*
-       * 400 / 401 / 403 等通常不是
-       * 短暫故障，不需要一直 retry。
-       */
-      if (
-        response.status === 400 ||
-        response.status === 401 ||
-        response.status === 403
-      ) {
-        break;
-      }
+      output.push({
+        type: 'photo',
+        label: `相片 ${++p}`,
+        url,
+        preview: item.thumbnail_url || item.url,
+        width: item.size?.width || null,
+        height: item.size?.height || null,
+        format: photoFormat(url)
+      });
 
-    } catch (error) {
-      console.log(
-        "FxTwitter attempt failed:",
-        String(error)
-      );
+    } else if (
+      host === 'video.twimg.com' &&
+      /\.mp4(?:\?|$)/i.test(item.url)
+    ) {
+      output.push({
+        type: 'video',
+        label: `影片 ${++v}`,
+        url: item.url,
+        preview: item.thumbnail_url || '',
+        width: item.size?.width || null,
+        height: item.size?.height || null,
+        bitrate: null,
+        format: 'mp4'
+      });
     }
   }
 
-  const error =
-    new Error(
-      lastStatus === 404
-        ? "解析服務暫時未取得這則帖子，請稍後再試"
-        : "X 解析服務暫時無法使用，請稍後再試"
-    );
-
-  error.status =
-    lastStatus || 503;
-
-  throw error;
+  return output;
 }
 
+async function getJson(url) {
+  const response = await fetch(url, {
+    headers: {
+      'Accept': 'application/json'
+    },
+    signal: AbortSignal.timeout(7000),
+    redirect: 'follow'
+  });
 
-async function handleApi(
-  request
-) {
-  const requestUrl =
-    new URL(
-      request.url
-    );
-
-  const raw =
-    requestUrl.searchParams.get(
-      "url"
-    );
-
-  let parsed;
+  let data;
 
   try {
-    parsed =
-      normalizeXUrl(
-        raw
-      );
-  } catch (error) {
-    return jsonResponse(
-      {
-        ok: false,
-        error:
-          error.message
-      },
-      400
+    data = await response.json();
+  } catch {
+    throw new Error(
+      `HTTP ${response.status} 非 JSON 回應`
     );
   }
 
-  try {
-    const status =
-      await fetchFxStatus(
-        parsed.id
-      );
+  if (
+    !response.ok ||
+    !data ||
+    (data.code && data.code !== 200)
+  ) {
+    throw new Error(
+      `HTTP ${response.status} / code ${data?.code || '?'}`
+    );
+  }
 
-    const media =
-      extractMedia(
-        status
-      );
+  return data;
+}
 
-    if (
-      media.length === 0
-    ) {
-      return jsonResponse(
-        {
-          ok: false,
-
-          error:
-            "這則帖子沒有找到可下載的圖片或影片"
-        },
-        404
-      );
-    }
-
-    const author =
-      status.author || {};
-
-    return jsonResponse(
-      {
-        ok: true,
-
-        post: {
-          id:
-            status.id ||
-            parsed.id,
-
-          url:
-            status.url ||
-            parsed.raw,
-
-          text:
-            status.text ||
-            "",
-
+async function resolvePost(post) {
+  const paths = [
+    {
+      name: 'FxTwitter v2',
+      url:
+        `https://api.fxtwitter.com/2/status/${post.id}`,
+      parse: d => ({
+        status: d.status,
+        media: fromFx(d.status)
+      })
+    },
+    {
+      name: 'FxTwitter 備援',
+      url:
+        'https://api.fxtwitter.com/' +
+        `${encodeURIComponent(post.handle)}/status/${post.id}`,
+      parse: d => ({
+        status: d.tweet || d.status,
+        media: fromFx(d.tweet || d.status)
+      })
+    },
+    {
+      name: 'VXTwitter 備援',
+      url:
+        'https://api.vxtwitter.com/' +
+        `${encodeURIComponent(post.handle)}/status/${post.id}`,
+      parse: d => ({
+        status: {
+          id: d.tweetID || post.id,
+          text: d.text || '',
           author: {
-            name:
-              author.name ||
-              author.display_name ||
-              "",
-
-            username:
-              author.screen_name ||
-              author.username ||
-              ""
+            name: d.user_name || '',
+            screen_name: d.user_screen_name || ''
           }
         },
+        media: fromVx(d)
+      })
+    }
+  ];
 
-        media
+  const errors = [];
+
+  for (const path of paths) {
+    const attempts =
+      path.name === 'FxTwitter v2' ? 2 : 1;
+
+    for (let i = 0; i < attempts; i++) {
+      if (i) await wait(500);
+
+      try {
+        const data = await getJson(path.url);
+        const parsed = path.parse(data);
+
+        if (
+          !parsed.status ||
+          parsed.status.type === 'tombstone'
+        ) {
+          throw new Error('帖子不可公開讀取');
+        }
+
+        if (!parsed.media.length) {
+          throw new Error('未找到可用 MP4／圖片');
+        }
+
+        return {
+          ...parsed,
+          source: path.name
+        };
+
+      } catch (e) {
+        errors.push(
+          `${path.name}: ${
+            String(e?.message || e).slice(0, 65)
+          }`
+        );
       }
-    );
-
-  } catch (error) {
-    const status =
-      Number(
-        error.status
-      ) || 503;
-
-    return jsonResponse(
-      {
-        ok: false,
-
-        error:
-          error.message ||
-          "解析服務暫時無法使用"
-      },
-      (
-        status >= 400 &&
-        status < 600
-      )
-        ? status
-        : 503
-    );
-  }
-}
-
-
-function safeFilename(
-  filename
-) {
-  return String(
-    filename ||
-    "X-media"
-  )
-    .replace(
-      /[\r\n"]/g,
-      ""
-    )
-    .slice(
-      0,
-      180
-    );
-}
-
-
-function asciiFilename(
-  filename
-) {
-  return safeFilename(
-    filename
-  )
-    .replace(
-      /[^\x20-\x7E]/g,
-      "_"
-    )
-    .replace(
-      /[\\/:*?"<>|]/g,
-      "_"
-    );
-}
-
-
-async function handleDownload(
-  request
-) {
-  if (
-    request.method !== "GET" &&
-    request.method !== "HEAD"
-  ) {
-    return new Response(
-      "Method not allowed",
-      {
-        status: 405
-      }
-    );
+    }
   }
 
-  const requestUrl =
-    new URL(
-      request.url
-    );
+  console.log(
+    'X parsing failures',
+    post.id,
+    errors.join(' | ')
+  );
 
-  const rawMediaUrl =
-    requestUrl.searchParams.get(
-      "url"
-    );
+  return { errors };
+}
 
-  if (!rawMediaUrl) {
-    return new Response(
-      "Missing media URL",
-      {
-        status: 400
-      }
-    );
-  }
-
-  let mediaUrl;
+async function handleApi(request) {
+  let post;
 
   try {
-    mediaUrl =
-      new URL(
-        rawMediaUrl
-      );
-  } catch {
-    return new Response(
-      "Invalid media URL",
-      {
-        status: 400
-      }
+    post = parsePostLink(
+      new URL(request.url).searchParams.get('url')
     );
+  } catch (e) {
+    return json({
+      ok: false,
+      error: e.message
+    }, 400);
+  }
+
+  const result = await resolvePost(post);
+
+  if (result.errors) {
+    const details = result.errors
+      .map(x => x
+        .replace('FxTwitter v2: ', 'v2 ')
+        .replace('FxTwitter 備援: ', 'Fx備援 ')
+        .replace('VXTwitter 備援: ', 'VX備援 ')
+      )
+      .join('；')
+      .slice(0, 190);
+
+    return json({
+      ok: false,
+      error: '公開解析來源都未能讀取帖子。' + details,
+      detail: result.errors.join('；'),
+      retryable: true
+    }, 503);
+  }
+
+  const author = result.status.author || {};
+
+  return json({
+    ok: true,
+    source: result.source,
+
+    post: {
+      id: result.status.id || post.id,
+      url: result.status.url || post.url,
+      text: result.status.text || '',
+      author: {
+        name:
+          author.name ||
+          author.display_name ||
+          '',
+        username:
+          author.screen_name ||
+          author.username ||
+          ''
+      }
+    },
+
+    media: result.media
+  });
+}
+
+function cleanFilename(value, fallback) {
+  const name = String(value || fallback)
+    .replace(/[\r\n\\/"<>:|?*\x00-\x1F]/g, '_')
+    .slice(0, 120);
+
+  return name || fallback;
+}
+
+async function handleDownload(request) {
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    return new Response('Method not allowed', {
+      status: 405
+    });
+  }
+
+  const params =
+    new URL(request.url).searchParams;
+
+  let upstreamUrl;
+
+  try {
+    upstreamUrl = new URL(
+      params.get('url')
+    );
+  } catch {
+    return new Response('Invalid media URL', {
+      status: 400
+    });
   }
 
   if (
-    mediaUrl.protocol !==
-      "https:" ||
-    !ALLOWED_MEDIA_HOSTS.has(
-      mediaUrl.hostname
-    )
+    upstreamUrl.protocol !== 'https:' ||
+    !MEDIA_HOSTS.has(upstreamUrl.hostname)
   ) {
     return new Response(
-      "Media host not allowed",
-      {
-        status: 403
-      }
+      'Media host not allowed',
+      { status: 403 }
     );
   }
 
-  const upstreamHeaders =
-    new Headers();
-
-  upstreamHeaders.set(
-    "Accept",
-    "*/*"
-  );
-
-  upstreamHeaders.set(
-    "Accept-Encoding",
-    "identity"
-  );
-
-  /*
-   * Safari 下載管理器會送 Range，
-   * 一定要原樣傳給 Twitter CDN。
-   */
-  const passthrough =
-    [
-      "range",
-      "if-range",
-      "if-none-match",
-      "if-modified-since"
-    ];
+  const headers = new Headers({
+    'Accept': '*/*',
+    'Accept-Encoding': 'identity'
+  });
 
   for (
-    const headerName
-    of passthrough
+    const h of [
+      'range',
+      'if-range',
+      'if-none-match',
+      'if-modified-since'
+    ]
   ) {
-    const value =
-      request.headers.get(
-        headerName
-      );
+    const value = request.headers.get(h);
 
     if (value) {
-      upstreamHeaders.set(
-        headerName,
-        value
-      );
+      headers.set(h, value);
     }
   }
 
   let upstream;
 
   try {
-    upstream =
-      await fetch(
-        mediaUrl.toString(),
-        {
-          method:
-            request.method,
-
-          headers:
-            upstreamHeaders,
-
-          redirect:
-            "follow"
-        }
-      );
-
-  } catch (error) {
-    return new Response(
-      "Unable to connect to media server",
+    upstream = await fetch(
+      upstreamUrl.toString(),
       {
-        status: 502
+        method: request.method,
+        headers,
+        redirect: 'follow'
       }
+    );
+  } catch {
+    return new Response(
+      'Media CDN temporarily unavailable',
+      { status: 502 }
     );
   }
 
-  if (
-    upstream.status >= 400
-  ) {
+  if (!upstream.ok) {
     return new Response(
-      `Media server returned HTTP ${upstream.status}`,
-      {
-        status:
-          upstream.status
-      }
+      `Media CDN HTTP ${upstream.status}`,
+      { status: upstream.status }
     );
   }
 
-  const headers =
-    new Headers();
-
-  /*
-   * Safari 顯示下載大小、
-   * 進度及續傳所需要的 headers。
-   */
-  const copyHeaders = [
-    "content-type",
-    "content-length",
-    "content-range",
-    "accept-ranges",
-    "etag",
-    "last-modified"
-  ];
+  const resHeaders = new Headers();
 
   for (
-    const name of copyHeaders
+    const h of [
+      'content-type',
+      'content-length',
+      'content-range',
+      'accept-ranges',
+      'etag',
+      'last-modified'
+    ]
   ) {
-    const value =
-      upstream.headers.get(
-        name
-      );
+    const value = upstream.headers.get(h);
 
     if (value) {
-      headers.set(
-        name,
-        value
-      );
+      resHeaders.set(h, value);
     }
   }
 
-  if (
-    !headers.has(
-      "accept-ranges"
-    )
-  ) {
-    headers.set(
-      "Accept-Ranges",
-      "bytes"
-    );
-  }
+  const fallback =
+    upstreamUrl.hostname === 'video.twimg.com'
+      ? 'X-video.mp4'
+      : 'X-photo.jpg';
 
-  const requestedName =
-    safeFilename(
-      requestUrl.searchParams.get(
-        "filename"
-      ) ||
-      (
-        mediaUrl.hostname ===
-        "video.twimg.com"
-          ? "X-video.mp4"
-          : "X-photo.jpg"
-      )
-    );
-
-  const fallbackName =
-    asciiFilename(
-      requestedName
-    );
-
-  headers.set(
-    "Content-Disposition",
-    `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(requestedName)}`
+  const filename = cleanFilename(
+    params.get('filename'),
+    fallback
   );
 
-  headers.set(
-    "X-Content-Type-Options",
-    "nosniff"
+  const ascii = filename.replace(
+    /[^\x20-\x7E]/g,
+    '_'
   );
 
-  headers.set(
-    "Cache-Control",
-    "private, no-store"
+  resHeaders.set(
+    'Content-Disposition',
+    `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`
   );
 
-  if (
-    request.method ===
-    "HEAD"
-  ) {
-    return new Response(
-      null,
-      {
-        status:
-          upstream.status,
+  resHeaders.set(
+    'Cache-Control',
+    'private, no-store'
+  );
 
-        headers
-      }
-    );
-  }
+  resHeaders.set(
+    'X-Content-Type-Options',
+    'nosniff'
+  );
 
-  /*
-   * 不讀成 Blob / ArrayBuffer。
-   * 直接串流給 Safari。
-   */
   return new Response(
-    upstream.body,
+    request.method === 'HEAD'
+      ? null
+      : upstream.body,
     {
-      status:
-        upstream.status,
-
-      headers
+      status: upstream.status,
+      headers: resHeaders
     }
   );
 }
 
-
 export default {
-  async fetch(
-    request,
-    env
-  ) {
-    const url =
-      new URL(
-        request.url
-      );
+  async fetch(request, env) {
+    const path =
+      new URL(request.url).pathname;
 
     if (
-      url.pathname ===
-        "/api" ||
-      url.pathname ===
-        "/api/"
+      path === '/api' ||
+      path === '/api/'
     ) {
-      return handleApi(
-        request
-      );
+      if (request.method !== 'GET') {
+        return json({
+          ok: false,
+          error: 'Method not allowed'
+        }, 405);
+      }
+
+      try {
+        return await handleApi(request);
+      } catch (e) {
+        console.error('API failure', e);
+
+        return json({
+          ok: false,
+          error: '解析器內部錯誤，請查看 Cloudflare Logs'
+        }, 500);
+      }
     }
 
     if (
-      url.pathname ===
-        "/download" ||
-      url.pathname ===
-        "/download/"
+      path === '/download' ||
+      path === '/download/'
     ) {
-      return handleDownload(
-        request
-      );
+      return handleDownload(request);
     }
 
-    /*
-     * 其他路徑交給 public/
-     * 靜態檔案。
-     */
-    return env.ASSETS.fetch(
-      request
-    );
+    return env.ASSETS.fetch(request);
   }
 };
